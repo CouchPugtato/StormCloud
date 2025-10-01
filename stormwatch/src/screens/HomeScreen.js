@@ -365,7 +365,7 @@ export default function HomeScreen({ navigation }) {
         colors={isDarkMode ? [theme.colors.primary, '#FF6B6B'] : ['#2196F3', '#1976D2']}
         style={styles.header}
       >
-        <Text style={styles.headerTitle}>StormWatch</Text>
+        <Text style={styles.headerTitle}>StormCloud</Text>
         <Text style={styles.headerSubtitle}>
           FRC Scouting & Match Analysis Platform by Team 509
         </Text>

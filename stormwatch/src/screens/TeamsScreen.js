@@ -364,8 +364,6 @@ const styles = StyleSheet.create({
     paddingTop: platformUtils.getStatusBarHeight() + 20,
     paddingBottom: 30,
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
   },
   headerTitle: {
     fontSize: 32,

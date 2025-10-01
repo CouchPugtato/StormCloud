@@ -21,8 +21,6 @@ export default function SettingsScreen() {
   const [settings, setSettings] = useState({
     notifications: true,
     autoUpdate: true,
-    analytics: false,
-    crashReporting: true,
   });
 
   const toggleSetting = (key) => {
@@ -96,27 +94,6 @@ export default function SettingsScreen() {
       ],
     },
     {
-      title: 'Privacy & Data',
-      items: [
-        {
-          key: 'analytics',
-          title: 'Analytics',
-          subtitle: 'Help improve the app with usage data',
-          icon: 'analytics',
-          type: 'toggle',
-          value: settings.analytics,
-        },
-        {
-          key: 'crashReporting',
-          title: 'Crash Reporting',
-          subtitle: 'Send crash reports to developers',
-          icon: 'bug',
-          type: 'toggle',
-          value: settings.crashReporting,
-        },
-      ],
-    },
-    {
       title: 'About',
       items: [
         {
@@ -127,7 +104,7 @@ export default function SettingsScreen() {
           type: 'info',
           onPress: () => showInfo(
             'App Version',
-            'StormWatch v1.0.0\n\nThis is a React Native cross-platform demo application showcasing modern mobile development practices.'
+            'StormCloud v1.0.0\n\nThis is a React Native cross-platform demo application showcasing modern mobile development practices.'
           ),
         },
         {
@@ -237,7 +214,7 @@ export default function SettingsScreen() {
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Settings</Text>
         <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-          Customize your StormWatch experience
+          Customize your StormCloud experience
         </Text>
       </View>
 
@@ -250,7 +227,7 @@ export default function SettingsScreen() {
         
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
-            StormWatch Demo • React Native Cross-Platform
+            StormCloud Demo
           </Text>
           <Text style={[styles.footerSubtext, { color: theme.colors.textTertiary }]}>
             Showcasing modern mobile development practices
