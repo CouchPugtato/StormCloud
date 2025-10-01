@@ -797,22 +797,6 @@ export default function TeamDetailScreen({ navigation, route }) {
             </Text>
           </TouchableOpacity>
         </View>
-
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Performance Metrics</Text>
-          <Text style={[styles.sectionText, { color: theme.colors.textSecondary }]}>
-            Match statistics, scoring averages, ranking points, and performance trends 
-            will be displayed here for detailed team analysis.
-          </Text>
-        </View>
-
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Match History</Text>
-          <Text style={[styles.sectionText, { color: theme.colors.textSecondary }]}>
-            Complete match history with alliance partners, opponents, scores, 
-            and performance breakdown for each qualification and elimination match.
-          </Text>
-        </View>
       </ScrollView>
     </View>
   );

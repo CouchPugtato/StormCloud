@@ -245,7 +245,7 @@ export default function HomeScreen({ navigation }) {
           <View style={[styles.notesSection, { backgroundColor: theme.colors.surface }]}>
             <View style={styles.epaSection}>
               <Text style={[styles.epaSectionTitle, { color: theme.colors.text }]}>
-                Team Analytics for {item.matchNumber}
+                Match Analytics for {item.matchNumber}
               </Text>
               
               <View style={[styles.allianceEpaContainer, styles.redAllianceContainer]}>
@@ -367,18 +367,9 @@ export default function HomeScreen({ navigation }) {
       >
         <Text style={styles.headerTitle}>StormWatch</Text>
         <Text style={styles.headerSubtitle}>
-          FRC Scouting & Match Analysis Platform
+          FRC Scouting & Match Analysis Platform by Team 509
         </Text>
       </LinearGradient>
-       <View style={[styles.summarySection, { backgroundColor: theme.colors.surface }]}>
-         <Text style={[styles.summaryTitle, { color: theme.colors.text }]}>About StormWatch</Text>
-         <Text style={[styles.summaryText, { color: theme.colors.textSecondary }]}>
-           StormWatch is a comprehensive FRC scouting platform that helps teams analyze match data, 
-           track performance metrics, and make strategic decisions. Scout teams, view match schedules, 
-           and access detailed analytics to give your team the competitive edge.
-         </Text>
-       </View>
-
        <View style={styles.eventDropdownContainer}>
          <Text style={[styles.eventsLabel, { color: theme.colors.text }]}>Events</Text>
          {loading ? (
