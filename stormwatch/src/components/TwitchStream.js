@@ -4,12 +4,47 @@ import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 
 const TwitchStream = () => {
-  const [twitchUrl, setTwitchUrl] = useState(null);
+  const [twitchUrl, setTwitchUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [embedError, setEmbedError] = useState(false);
+  const [windowDimensions, setWindowDimensions] = useState(
+    Platform.OS === 'web' ? { width: window.innerWidth, height: window.innerHeight } : Dimensions.get('window')
+  );
+  
+  // Get responsive dimensions based on platform
+  const getStreamDimensions = () => {
+    if (Platform.OS === 'web') {
+      const screenWidth = windowDimensions.width;
+      // On web, use a larger height and responsive width
+      return {
+        height: Math.min(400, screenWidth * 0.4), // Max 400px or 40% of screen width
+        width: screenWidth > 768 ? screenWidth - 64 : screenWidth - 32, // Larger margins on desktop
+      };
+    } else {
+      // On mobile, keep it more compact
+      return {
+        height: 220,
+        width: Dimensions.get('window').width - 32,
+      };
+    }
+  };
+
+  const streamDimensions = getStreamDimensions();
 
   useEffect(() => {
     fetchTwitchUrl();
+  }, []);
+
+  // Handle window resize on web to update dimensions
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const handleResize = () => {
+        setWindowDimensions({ width: window.innerWidth, height: window.innerHeight });
+      };
+
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
   }, []);
 
   const fetchTwitchUrl = async () => {
@@ -54,11 +89,15 @@ const TwitchStream = () => {
     return null;
   }
 
-  // fallback UI if embed fails
+  // Show fallback UI if embed fails
   if (embedError) {
     const channelName = twitchUrl.split('/').pop();
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { 
+        height: streamDimensions.height,
+        width: streamDimensions.width,
+        alignSelf: 'center',
+      }]}>
         <View style={styles.fallbackContainer}>
           <Ionicons name="videocam-outline" size={48} color="#9146FF" />
           <Text style={styles.fallbackTitle}>Twitch Stream</Text>
@@ -73,7 +112,11 @@ const TwitchStream = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { 
+      height: streamDimensions.height,
+      width: streamDimensions.width,
+      alignSelf: 'center',
+    }]}>
       {Platform.OS === 'web' ? (
         <iframe
           src={embedUrl}
@@ -106,12 +149,11 @@ const TwitchStream = () => {
 
 const styles = StyleSheet.create({
   container: {
-    height: 200,
-    marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#000',
+    // Height and width are now set dynamically based on platform
   },
   webview: {
     flex: 1,

@@ -141,20 +141,6 @@ export default function SettingsScreen() {
       ],
     },
     {
-      title: 'Stream Settings',
-      items: [
-        {
-          key: 'twitchUrl',
-          title: 'Twitch Channel URL',
-          subtitle: twitchUrl || 'No Twitch channel configured',
-          icon: 'videocam',
-          type: 'input',
-          value: twitchUrl,
-          onPress: showTwitchUrlInput,
-        },
-      ],
-    },
-    {
       title: 'About',
       items: [
         {
