@@ -12,9 +12,11 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useEventMode } from '../contexts/EventModeContext';
 
 export default function SettingsScreen() {
   const { theme, isDarkMode, themePreference, toggleTheme, setSystemTheme } = useTheme();
+  const { isEventMode, toggleEventMode } = useEventMode();
   
   const [settings, setSettings] = useState({
     notifications: true,
@@ -81,6 +83,15 @@ export default function SettingsScreen() {
           icon: 'refresh-circle',
           type: 'toggle',
           value: settings.autoUpdate,
+        },
+        {
+          key: 'eventMode',
+          title: 'Event Mode',
+          subtitle: isEventMode ? 'Server updates every 3 minutes' : 'Normal update schedule (every 2 hours)',
+          icon: 'flash',
+          type: 'toggle',
+          value: isEventMode,
+          onToggle: toggleEventMode,
         },
       ],
     },

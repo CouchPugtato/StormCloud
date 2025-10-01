@@ -16,12 +16,10 @@ export const AuthProvider = ({ children }) => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // load stored users and current user on app start
   useEffect(() => {
     loadStoredData();
   }, []);
 
-  // unitialize mock data if no users exist
   useEffect(() => {
     const initializeMockData = async () => {
       if (users.length === 0) {

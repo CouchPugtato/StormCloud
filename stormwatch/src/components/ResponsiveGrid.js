@@ -20,9 +20,8 @@ const ResponsiveGrid = ({
       // web responsive breakpoints
       if (width >= 1200) return 3; // desktop
       if (width >= 768) return 2;  // tablet
-      return 1; // Mobile
+      return 1; // mobile
     } else {
-      // native responsive breakpoints
       if (width >= 768) return 2; // tablet
       return 1; // mobile
     }

@@ -25,9 +25,8 @@ export default function ChannelDropdown() {
 
   const getUnreadCount = (channelId) => {
     const messages = getChannelMessages(channelId);
-    // for demo purposes, show unread count for non-active channels
     if (channelId === activeChannel) return 0;
-    return Math.floor(Math.random() * 3); // mock unread count
+    return Math.floor(Math.random() * 3);
   };
 
   const getTotalNotifications = () => {

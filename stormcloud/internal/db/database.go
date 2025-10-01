@@ -1,4 +1,4 @@
-package database
+package db
 
 import (
 	"database/sql"
@@ -9,7 +9,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed ../../migrations/*.sql
+//go:embed migrations/*.sql
 var migrationsFS embed.FS
 
 func Open(path string) (*sql.DB, error) {
@@ -25,7 +25,16 @@ func Open(path string) (*sql.DB, error) {
 }
 
 func Migrate(db *sql.DB) error {
-	entries, err := migrationsFS.ReadDir("../../migrations")
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		id INTEGER PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE,
+		applied_at INTEGER NOT NULL
+	)`)
+	if err != nil {
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
+	}
+
+	entries, err := migrationsFS.ReadDir("migrations")
 	if err != nil {
 		return err
 	}
@@ -37,7 +46,7 @@ func Migrate(db *sql.DB) error {
 			continue
 		}
 
-		sqlBytes, err := migrationsFS.ReadFile("../../migrations/" + name)
+		sqlBytes, err := migrationsFS.ReadFile("migrations/" + name)
 		if err != nil {
 			return err
 		}

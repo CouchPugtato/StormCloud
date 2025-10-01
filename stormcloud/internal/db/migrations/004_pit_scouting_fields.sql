@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_teams_pit_scouting ON teams(robot_weight, robot_dimensions, drivebase_type);

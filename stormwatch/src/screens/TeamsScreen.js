@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,14 @@ import {
   StatusBar,
   TextInput,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { globalStyles } from '../styles/globalStyles';
 import { platformUtils } from '../utils/platformUtils';
 import { useTheme } from '../contexts/ThemeContext';
+import apiService from '../utils/apiService';
 
 const sampleTeams = [
   {
@@ -132,53 +134,103 @@ export default function TeamsScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEvent, setSelectedEvent] = useState('All Events');
   const [showFilters, setShowFilters] = useState(false);
+  const [teams, setTeams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const allEvents = useMemo(() => ['All Events', ...getAllEvents()], []);
 
+  useEffect(() => {
+    const fetchTeams = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const teamsData = await apiService.getAllTeams();
+        setTeams(teamsData || []); 
+      } catch (err) {
+        console.error('Failed to fetch teams:', err);
+        setError('Failed to load teams. Please check your connection.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTeams();
+  }, []);
+
+  useEffect(() => {
+    const searchTeams = async () => {
+      if (searchQuery.trim() === '') {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      try {
+        setIsSearching(true);
+        const results = await apiService.searchTeams(searchQuery);
+        setSearchResults(results || []); 
+      } catch (err) {
+        console.error('Search failed:', err);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const timeoutId = setTimeout(searchTeams, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
   const filteredTeams = useMemo(() => {
-    let filtered = sampleTeams;
+    const sourceTeams = searchQuery.trim() !== '' ? searchResults : teams;
+    let filtered = sourceTeams || []; 
 
-    // filter by search query (team number or name)
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(team => 
-        team.id.toString().includes(query) ||
-        team.name.toLowerCase().includes(query)
-      );
-    }
-
-    // filter by event
     if (selectedEvent !== 'All Events') {
-      filtered = filtered.filter(team => 
-        team.events.includes(selectedEvent)
-      );
+      filtered = sourceTeams || [];
     }
 
     return filtered;
-  }, [searchQuery, selectedEvent]);
+  }, [searchQuery, searchResults, teams, selectedEvent]);
 
-  const renderTeamItem = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.teamItem, { backgroundColor: theme.colors.surface }]}
-      onPress={() => navigation.navigate('TeamDetail', { team: item })}
-      activeOpacity={0.7}
-    >
-      <View style={styles.teamRow}>
-        <Text style={[styles.teamNumber, { color: theme.colors.accent }]}>{item.id}</Text>
-        <View style={[styles.separator, { backgroundColor: theme.colors.border }]} />
-        <View style={styles.teamInfo}>
-          <Text style={[styles.teamName, { color: theme.colors.text }]} numberOfLines={1}>{item.name}</Text>
-          <Text style={[styles.teamLocation, { color: theme.colors.textSecondary }]} numberOfLines={1}>{item.location}</Text>
+  const renderTeamItem = ({ item }) => {
+    const teamNumber = item.team_num || item.id;
+    const teamName = item.name;
+    const teamLocation = item.city && item.state 
+      ? `${item.city}, ${item.state}` 
+      : item.location || 'Location not available';
+    
+    return (
+      <TouchableOpacity
+        style={[styles.teamItem, { backgroundColor: theme.colors.surface }]}
+        onPress={() => navigation.navigate('TeamDetail', { 
+          team: {
+            ...item,
+            id: teamNumber,
+            team_key: item.team_key || `frc${teamNumber}`
+          }
+        })}
+        activeOpacity={0.7}
+      >
+        <View style={styles.teamRow}>
+          <Text style={[styles.teamNumber, { color: theme.colors.accent }]}>{teamNumber}</Text>
+          <View style={[styles.separator, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.teamInfo}>
+            <Text style={[styles.teamName, { color: theme.colors.text }]} numberOfLines={1}>{teamName}</Text>
+            <Text style={[styles.teamLocation, { color: theme.colors.textSecondary }]} numberOfLines={1}>{teamLocation}</Text>
+          </View>
+          <Ionicons 
+            name="chevron-forward" 
+            size={20} 
+            color={theme.colors.textSecondary} 
+            style={styles.chevron}
+          />
         </View>
-        <Ionicons 
-          name="chevron-forward" 
-          size={20} 
-          color={theme.colors.textSecondary} 
-          style={styles.chevron}
-        />
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   const renderEventFilter = ({ item }) => (
     <TouchableOpacity
@@ -211,13 +263,17 @@ export default function TeamsScreen({ navigation }) {
       >
         <Text style={styles.headerTitle}>Teams</Text>
         <Text style={styles.headerSubtitle}>
-          {filteredTeams.length} teams found
+          {filteredTeams?.length || 0} teams found
         </Text>
       </LinearGradient>
 
       <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface }]}>
         <View style={[styles.searchInputContainer, { backgroundColor: theme.colors.background }]}>
-          <Ionicons name="search" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
+          {isSearching ? (
+            <ActivityIndicator size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
+          ) : (
+            <Ionicons name="search" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
+          )}
           <TextInput
             style={[styles.searchInput, { color: theme.colors.text }]}
             placeholder="Search by team number or name..."
@@ -259,14 +315,42 @@ export default function TeamsScreen({ navigation }) {
         </View>
       )}
 
-      <FlatList
-        data={filteredTeams}
-        renderItem={renderTeamItem}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
-      />
+      {loading ? (
+        <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+          <ActivityIndicator size="large" color={theme.colors.accent} />
+          <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading teams...</Text>
+        </View>
+      ) : error ? (
+        <View style={[styles.errorContainer, { backgroundColor: theme.colors.background }]}>
+          <Ionicons name="alert-circle-outline" size={48} color={theme.colors.textSecondary} />
+          <Text style={[styles.errorText, { color: theme.colors.text }]}>{error}</Text>
+          <TouchableOpacity 
+            style={[styles.retryButton, { backgroundColor: theme.colors.accent }]}
+            onPress={() => {
+              setError(null);
+              setLoading(true);
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredTeams}
+          renderItem={renderTeamItem}
+          keyExtractor={(item) => (item.team_num || item.id).toString()}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
+          ListEmptyComponent={() => (
+            <View style={[styles.emptyContainer, { backgroundColor: theme.colors.background }]}>
+              <Ionicons name="search-outline" size={48} color={theme.colors.textSecondary} />
+              <Text style={[styles.emptyText, { color: theme.colors.text }]}>No teams found</Text>
+              <Text style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}>Try adjusting your search or filters</Text>
+            </View>
+          )}
+        />
+      )}
     </View>
   );
 }
@@ -412,5 +496,59 @@ const styles = StyleSheet.create({
   },
   itemSeparator: {
     height: 12,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#6c757d',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    paddingVertical: 50,
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    textAlign: 'center',
+    color: '#212529',
+    marginBottom: 20,
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 25,
+    backgroundColor: '#2196F3',
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#212529',
+  },
+  emptySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#6c757d',
+    textAlign: 'center',
   },
 });

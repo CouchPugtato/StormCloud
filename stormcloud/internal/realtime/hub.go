@@ -35,7 +35,6 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			// echo/broadcast minimal example:
 			h.mu.Lock()
 			for conn := range h.conns {
 				_ = conn.WriteMessage(websocket.TextMessage, msg)

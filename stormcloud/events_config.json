@@ -1,0 +1,14 @@
+{
+  "sync_settings": {
+    "sync_all_teams": false,
+    "sync_event_teams_only": true,
+    "enable_epa_sync": true,
+    "current_year": 2025
+  },
+  "tba_keys": [
+    "2025mabos"
+  ],
+  "statbotics_keys": [
+    "2025mabos"
+  ]
+}

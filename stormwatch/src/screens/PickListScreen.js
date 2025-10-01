@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,24 +9,13 @@ import {
   Modal,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
-
-const sampleTeams = [
-  { id: 254, name: 'The Cheesy Poofs', location: 'San Jose, CA' },
-  { id: 1678, name: 'Citrus Circuits', location: 'Davis, CA' },
-  { id: 148, name: 'Robowranglers', location: 'Greenville, TX' },
-  { id: 1323, name: 'MadTown Robotics', location: 'Madison, WI' },
-  { id: 2056, name: 'OP Robotics', location: 'Overland Park, KS' },
-  { id: 3476, name: 'Code Orange', location: 'Ballwin, MO' },
-  { id: 5940, name: 'BREAD', location: 'New York, NY' },
-  { id: 6328, name: 'Mechanical Advantage', location: 'Littleton, MA' },
-  { id: 7407, name: 'Wired Boars', location: 'Apex, NC' },
-  { id: 8033, name: 'HighTide', location: 'Redmond, WA' },
-];
+import apiService from '../utils/apiService';
 
 export default function PickListScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme();
@@ -36,14 +25,70 @@ export default function PickListScreen({ navigation }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [struckThroughTeams, setStruckThroughTeams] = useState(new Set());
+  const [availableTeams, setAvailableTeams] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (showAddModal && availableTeams.length === 0) {
+      fetchTeams();
+    }
+  }, [showAddModal]);
+
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    const searchTeams = async () => {
+      try {
+        setSearching(true);
+        setError(null);
+        const results = await apiService.searchTeams(searchQuery);
+        setSearchResults(results);
+      } catch (err) {
+        console.error('Search failed:', err);
+        setError('Search failed. Please try again.');
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    };
+
+    const timeoutId = setTimeout(searchTeams, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  const fetchTeams = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const teams = await apiService.getAllTeams();
+      setAvailableTeams(teams);
+    } catch (err) {
+      console.error('Failed to fetch teams:', err);
+      setError('Failed to load teams. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // filter teams based on search query and exclude already picked teams
-  const filteredTeams = sampleTeams.filter(team => {
-    const matchesSearch = team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         team.id.toString().includes(searchQuery);
-    const notInPickList = !pickList.find(pickedTeam => pickedTeam.id === team.id);
-    return matchesSearch && notInPickList;
-  });
+  const filteredTeams = (() => {
+    const sourceTeams = searchQuery.trim() !== '' ? searchResults : availableTeams;
+    return sourceTeams.filter(team => {
+      const teamId = team.team_num || team.id;
+      const notInPickList = !pickList.find(pickedTeam => {
+        const pickedTeamId = pickedTeam.team_num || pickedTeam.id;
+        return pickedTeamId === teamId;
+      });
+      return notInPickList;
+    });
+  })();
 
   // add team to pick list
   const addTeamToPickList = (team) => {
@@ -272,6 +317,9 @@ export default function PickListScreen({ navigation }) {
                 onPress={() => {
                   setShowAddModal(false);
                   setSearchQuery('');
+                  setSearchResults([]);
+                  setError(null);
+                  setSearching(false);
                 }}
               >
                 <Ionicons name="close" size={24} color={theme.colors.text} />
@@ -293,33 +341,73 @@ export default function PickListScreen({ navigation }) {
               </View>
             </View>
 
-            <FlatList
-              data={filteredTeams}
-              keyExtractor={(item) => item.id.toString()}
-              style={styles.teamsList}
-              renderItem={({ item }) => (
-                <View style={[styles.teamItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                   <View style={styles.teamItemInfo}>
-                     <Text style={[styles.teamItemNumber, { color: theme.colors.text }]}>{item.id} - {item.name}</Text>
-                     <Text style={[styles.teamItemLocation, { color: theme.colors.textSecondary }]}>{item.location}</Text>
-                   </View>
-                  <TouchableOpacity
-                    style={[styles.addTeamButton, { backgroundColor: theme.colors.primary }]}
-                    onPress={() => addTeamToPickList(item)}
-                  >
-                    <Ionicons name="add" size={20} color="white" />
-                  </TouchableOpacity>
-                </View>
-              )}
-              ListEmptyComponent={
-                <View style={styles.emptySearchState}>
-                  <Ionicons name="search-outline" size={48} color={theme.colors.textSecondary} />
-                  <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>
-                    {searchQuery ? 'No teams found matching your search' : 'Start typing to search for teams'}
-                  </Text>
-                </View>
-              }
-            />
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+                <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading teams...</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={filteredTeams}
+                keyExtractor={(item) => (item.team_num || item.id).toString()}
+                style={styles.teamsList}
+                renderItem={({ item }) => {
+                  const teamNumber = item.team_num || item.id;
+                  const teamName = item.name;
+                  const teamLocation = item.city && item.state 
+                    ? `${item.city}, ${item.state}` 
+                    : item.location || 'Location not available';
+                  
+                  return (
+                    <View style={[styles.teamItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                      <View style={styles.teamItemInfo}>
+                        <Text style={[styles.teamItemNumber, { color: theme.colors.text }]}>{teamNumber} - {teamName}</Text>
+                        <Text style={[styles.teamItemLocation, { color: theme.colors.textSecondary }]}>{teamLocation}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.addTeamButton, { backgroundColor: theme.colors.primary }]}
+                        onPress={() => addTeamToPickList({
+                          ...item,
+                          id: teamNumber,
+                          name: teamName,
+                          location: teamLocation
+                        })}
+                      >
+                        <Ionicons name="add" size={20} color="white" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+                ListEmptyComponent={
+                  <View style={styles.emptySearchState}>
+                    {searching ? (
+                      <>
+                        <ActivityIndicator size="large" color={theme.colors.primary} />
+                        <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>Searching...</Text>
+                      </>
+                    ) : error ? (
+                      <>
+                        <Ionicons name="alert-circle-outline" size={48} color={theme.colors.textSecondary} />
+                        <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>{error}</Text>
+                        <TouchableOpacity
+                          style={[styles.retryButton, { backgroundColor: theme.colors.primary }]}
+                          onPress={() => searchQuery.trim() !== '' ? null : fetchTeams()}
+                        >
+                          <Text style={styles.retryButtonText}>Retry</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons name="search-outline" size={48} color={theme.colors.textSecondary} />
+                        <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>
+                          {searchQuery ? 'No teams found matching your search' : 'Start typing to search for teams'}
+                        </Text>
+                      </>
+                    )}
+                  </View>
+                }
+              />
+            )}
           </View>
         </Modal>
       </View>
@@ -544,6 +632,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginTop: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    fontSize: 16,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  retryButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
   reorderButtons: {
      flexDirection: 'column',

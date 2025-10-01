@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   FlatList,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import apiService from '../utils/apiService';
+import { calculateWinProbability, formatEPA, formatWinProbability } from '../utils/epaCalculations';
 
 const { width, height } = Dimensions.get('window');
 const isMobile = height > width; // mobile devices have height > width
@@ -24,123 +27,108 @@ const isMobile = height > width; // mobile devices have height > width
 export default function HomeScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme();
   const { user } = useAuth();
-  const [selectedEvent, setSelectedEvent] = useState('2024week1');
+  const [selectedEvent, setSelectedEvent] = useState(null);
   const [expandedMatch, setExpandedMatch] = useState(null);
   const [matchNotes, setMatchNotes] = useState({});
   const [currentNote, setCurrentNote] = useState('');
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [matchesLoading, setMatchesLoading] = useState(false);
+  const [epaData, setEpaData] = useState({});
+  const [winProbabilities, setWinProbabilities] = useState({});
 
-  // mock events data
-  const events = [
-    { key: '2024week1', name: '2024 Week 1 - Regional' },
-    { key: '2024week2', name: '2024 Week 2 - District' },
-    { key: '2024week3', name: '2024 Week 3 - Championship' },
-    { key: '2024regional', name: '2024 Regional Finals' },
-  ];
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        setLoading(true);
+        const eventsData = await apiService.getEvents();
+        const transformedEvents = eventsData.map(event => ({
+          key: event.event_key,
+          name: event.name
+        }));
+        setEvents(transformedEvents);
+        
+        if (transformedEvents.length > 0) {
+          setSelectedEvent(transformedEvents[0].key);
+        }
+      } catch (error) {
+        console.error('Failed to fetch events:', error);
+        Alert.alert('Error', 'Failed to load events. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const [currentMatchId, setCurrentMatchId] = useState(3); // Quals 3 is current
+    fetchEvents();
+  }, []);
 
-  const allMatches = {
-    '2024week1': [
-      {
-        id: 1,
-        matchNumber: 'Quals 1',
-        redAlliance: [1234, 5678, 9012],
-        blueAlliance: [509, 3456, 7890],
-        scoutAssignments: { 1234: 'mock1', 3456: 'mock2' },
-        redScore: 142,
-        blueScore: 158,
-        status: 'completed', // completed, current, upcoming
-      },
-      {
-        id: 2,
-        matchNumber: 'Quals 2',
-        redAlliance: [2468, 1357, 8642],
-        blueAlliance: [509, 1111, 2222],
-        scoutAssignments: { 2468: 'mock1', 1111: 'mock3' },
-        redScore: 176,
-        blueScore: 134,
-        status: 'completed',
-       },
-       {
-         id: 3,
-         matchNumber: 'Quals 3',
-         redAlliance: [509, 3333, 4444],
-         blueAlliance: [5555, 6666, 7777],
-         scoutAssignments: { 3333: 'mock2', 5555: 'mock1' },
-         redScore: null,
-         blueScore: null,
-         status: 'current',
-       },
-       {
-         id: 4,
-         matchNumber: 'Quals 4',
-         redAlliance: [8888, 9999, 1010],
-         blueAlliance: [1212, 1313, 509],
-         scoutAssignments: { 8888: 'mock3', 1212: 'mock1' },
-         redScore: null,
-         blueScore: null,
-         status: 'upcoming',
-       },
-       {
-         id: 5,
-         matchNumber: 'Quals 5',
-         redAlliance: [1515, 1616, 1717],
-         blueAlliance: [1818, 509, 1919],
-         scoutAssignments: { 1515: 'mock1', 1818: 'mock2' },
-         redScore: null,
-         blueScore: null,
-         status: 'upcoming',
-      },
-    ],
-    '2024week2': [
-      {
-        id: 6,
-        matchNumber: 'Quals 1',
-        redAlliance: [509, 2020, 2121],
-        blueAlliance: [2222, 2323, 2424],
-        scoutAssignments: { 2020: 'mock1', 2222: 'mock3' },
-        redScore: 189,
-        blueScore: 145,
-        status: 'completed',
-       },
-       {
-         id: 7,
-         matchNumber: 'Quals 2',
-         redAlliance: [2525, 2626, 2727],
-         blueAlliance: [509, 2828, 2929],
-         scoutAssignments: { 2525: 'mock2', 2828: 'mock1' },
-         redScore: null,
-         blueScore: null,
-         status: 'current',
-      },
-    ],
-    '2024week3': [
-      {
-        id: 8,
-        matchNumber: 'Quals 1',
-        redAlliance: [3030, 3131, 509],
-        blueAlliance: [3232, 3333, 3434],
-        scoutAssignments: { 3030: 'mock1', 3232: 'mock2' },
-        redScore: null,
-        blueScore: null,
-        status: 'upcoming',
-       },
-     ],
-     '2024regional': [
-       {
-         id: 9,
-         matchNumber: 'Quals 1',
-         redAlliance: [509, 4040, 4141],
-         blueAlliance: [4242, 4343, 4444],
-         scoutAssignments: { 4040: 'mock1', 4242: 'mock3' },
-         redScore: null,
-         blueScore: null,
-         status: 'upcoming',
-      },
-    ],
-  };
+  const [currentMatches, setCurrentMatches] = useState([]);
 
-  const currentMatches = allMatches[selectedEvent] || [];
+  useEffect(() => {
+    const fetchMatches = async () => {
+      if (!selectedEvent) return;
+      
+      try {
+        setMatchesLoading(true);
+        const matchesData = await apiService.getEventMatches(selectedEvent);
+        
+        const transformedMatches = matchesData.map((match, index) => ({
+          id: index + 1,
+          matchNumber: `${match.comp_level === 'qm' ? 'Quals' : match.comp_level.toUpperCase()} ${match.match_number}`,
+          matchKey: match.match_key,
+          redAlliance: match.red_teams.map(team => parseInt(team.replace('frc', ''))),
+          blueAlliance: match.blue_teams.map(team => parseInt(team.replace('frc', ''))),
+          scoutAssignments: {}, // TODO: implement scout assignments from backend
+          redScore: match.red_score,
+          blueScore: match.blue_score,
+          status: match.red_score !== null && match.blue_score !== null ? 'completed' : 'upcoming',
+          time: match.time_real ? new Date(match.time_real * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD',
+        }));
+        
+        setCurrentMatches(transformedMatches);
+        
+        const allTeamKeys = new Set();
+        transformedMatches.forEach(match => {
+          match.redAlliance.forEach(team => allTeamKeys.add(`frc${team}`));
+          match.blueAlliance.forEach(team => allTeamKeys.add(`frc${team}`));
+        });
+        
+        const teamKeysArray = Array.from(allTeamKeys);
+        const epaResults = await apiService.getTeamsEPA(teamKeysArray);
+        setEpaData(epaResults);
+        
+        const matchProbabilities = {};
+        transformedMatches.forEach(match => {
+          const redTotalEPA = match.redAlliance.reduce((sum, team) => {
+            const teamEPA = epaResults[`frc${team}`] || 0;
+            return sum + (typeof teamEPA === 'number' ? teamEPA : 0);
+          }, 0);
+          
+          const blueTotalEPA = match.blueAlliance.reduce((sum, team) => {
+            const teamEPA = epaResults[`frc${team}`] || 0;
+            return sum + (typeof teamEPA === 'number' ? teamEPA : 0);
+          }, 0);
+          
+          const redWinProb = calculateWinProbability(redTotalEPA, blueTotalEPA);
+          const blueWinProb = 100 - redWinProb;
+          
+          matchProbabilities[match.matchKey] = {
+            red: redWinProb,
+            blue: blueWinProb
+          };
+        });
+        
+        setWinProbabilities(matchProbabilities);
+      } catch (error) {
+        console.error('Failed to fetch matches:', error);
+        Alert.alert('Error', 'Failed to load matches. Please try again.');
+      } finally {
+        setMatchesLoading(false);
+      }
+    };
+
+    fetchMatches();
+  }, [selectedEvent]);
 
   // handle match expansion for notes
   const toggleMatchExpansion = (matchId) => {
@@ -220,7 +208,6 @@ export default function HomeScreen({ navigation }) {
             </Text>
           </View>
         
-        {/* Red Alliance - Individual Columns */}
         <View style={styles.teamColumn}>
           {renderTeam(item.redAlliance[0])}
         </View>
@@ -231,7 +218,6 @@ export default function HomeScreen({ navigation }) {
           {renderTeam(item.redAlliance[2])}
         </View>
         
-        {/* Blue Alliance - Individual Columns */}
         <View style={styles.teamColumn}>
           {renderTeam(item.blueAlliance[0])}
         </View>
@@ -242,7 +228,6 @@ export default function HomeScreen({ navigation }) {
           {renderTeam(item.blueAlliance[2])}
         </View>
         
-        {/* Scores at the end */}
         <View style={styles.scoreColumn}>
           <Text style={[styles.scoreText, { color: '#FF4444' }]}>
             {item.redScore !== null ? item.redScore : '-'}
@@ -256,9 +241,88 @@ export default function HomeScreen({ navigation }) {
         </View>
         </TouchableOpacity>
         
-        {/* Expandable Notes Section */}
         {isExpanded && (
           <View style={[styles.notesSection, { backgroundColor: theme.colors.surface }]}>
+            <View style={styles.epaSection}>
+              <Text style={[styles.epaSectionTitle, { color: theme.colors.text }]}>
+                Team Analytics for {item.matchNumber}
+              </Text>
+              
+              <View style={[styles.allianceEpaContainer, styles.redAllianceContainer]}>
+                <View style={styles.allianceHeader}>
+                  <Text style={[styles.allianceTitle, { color: '#FFFFFF' }]}>Red Alliance</Text>
+                  <View style={styles.allianceStats}>
+                    <Text style={[styles.allianceTotalEPA, { color: '#FFFFFF' }]}>
+                      Total EPA: {formatEPA(
+                        item.redAlliance.reduce((sum, team) => {
+                          const teamKey = `frc${team}`;
+                          const teamEPA = epaData[teamKey] || 0;
+                          return sum + (typeof teamEPA === 'number' ? teamEPA : 0);
+                        }, 0)
+                      )}
+                    </Text>
+                    <Text style={[styles.allianceWinProb, { color: '#FFFFFF' }]}>
+                      Win: {formatWinProbability(winProbabilities[item.matchKey]?.red || 0)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.teamsEpaContainer}>
+                  {item.redAlliance.map((team, index) => {
+                    const teamKey = `frc${team}`;
+                    const teamEPA = epaData[teamKey] || 0;
+                    
+                    return (
+                      <View key={index} style={styles.teamEpaRow}>
+                        <Text style={[styles.teamEpaNumber, { color: '#FFFFFF' }]}>
+                          {team}
+                        </Text>
+                        <Text style={[styles.teamEpaValue, { color: '#FFE6E6' }]}>
+                          EPA: {formatEPA(teamEPA)}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+              
+              <View style={[styles.allianceEpaContainer, styles.blueAllianceContainer]}>
+                <View style={styles.allianceHeader}>
+                  <Text style={[styles.allianceTitle, { color: '#FFFFFF' }]}>Blue Alliance</Text>
+                  <View style={styles.allianceStats}>
+                    <Text style={[styles.allianceTotalEPA, { color: '#FFFFFF' }]}>
+                      Total EPA: {formatEPA(
+                        item.blueAlliance.reduce((sum, team) => {
+                          const teamKey = `frc${team}`;
+                          const teamEPA = epaData[teamKey] || 0;
+                          return sum + (typeof teamEPA === 'number' ? teamEPA : 0);
+                        }, 0)
+                      )}
+                    </Text>
+                    <Text style={[styles.allianceWinProb, { color: '#FFFFFF' }]}>
+                      Win: {formatWinProbability(winProbabilities[item.matchKey]?.blue || 0)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.teamsEpaContainer}>
+                  {item.blueAlliance.map((team, index) => {
+                    const teamKey = `frc${team}`;
+                    const teamEPA = epaData[teamKey] || 0;
+                    
+                    return (
+                      <View key={index} style={styles.teamEpaRow}>
+                        <Text style={[styles.teamEpaNumber, { color: '#FFFFFF' }]}>
+                          {team}
+                        </Text>
+                        <Text style={[styles.teamEpaValue, { color: '#E6E6FF' }]}>
+                          EPA: {formatEPA(teamEPA)}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+            
             <Text style={[styles.notesTitle, { color: theme.colors.text }]}>
               Notes for {item.matchNumber}
             </Text>
@@ -306,40 +370,40 @@ export default function HomeScreen({ navigation }) {
           FRC Scouting & Match Analysis Platform
         </Text>
       </LinearGradient>
-      {/* Service Summary */}
-      <View style={[styles.summarySection, { backgroundColor: theme.colors.surface }]}>
-        <Text style={[styles.summaryTitle, { color: theme.colors.text }]}>About StormWatch</Text>
-        <Text style={[styles.summaryText, { color: theme.colors.textSecondary }]}>
-          StormWatch is a comprehensive FRC scouting platform that helps teams analyze match data, 
-          track performance metrics, and make strategic decisions. Scout teams, view match schedules, 
-          and access detailed analytics to give your team the competitive edge.
-        </Text>
-      </View>
+       <View style={[styles.summarySection, { backgroundColor: theme.colors.surface }]}>
+         <Text style={[styles.summaryTitle, { color: theme.colors.text }]}>About StormWatch</Text>
+         <Text style={[styles.summaryText, { color: theme.colors.textSecondary }]}>
+           StormWatch is a comprehensive FRC scouting platform that helps teams analyze match data, 
+           track performance metrics, and make strategic decisions. Scout teams, view match schedules, 
+           and access detailed analytics to give your team the competitive edge.
+         </Text>
+       </View>
 
-      {/* Event Selection */}
-      <View style={styles.eventDropdownContainer}>
-        <Text style={[styles.eventsLabel, { color: theme.colors.text }]}>Events</Text>
-        <View style={styles.compactPickerContainer}>
-          <Picker
-            selectedValue={selectedEvent}
-            onValueChange={(itemValue) => setSelectedEvent(itemValue)}
-            style={styles.compactPicker}
-          >
-            {events.map(event => (
-              <Picker.Item key={event.key} label={event.name} value={event.key} color="#000000" />
-            ))}
-          </Picker>
-        </View>
-      </View>
+       <View style={styles.eventDropdownContainer}>
+         <Text style={[styles.eventsLabel, { color: theme.colors.text }]}>Events</Text>
+         {loading ? (
+           <ActivityIndicator size="small" color={theme.colors.primary} />
+         ) : (
+           <View style={styles.compactPickerContainer}>
+             <Picker
+               selectedValue={selectedEvent}
+               onValueChange={(itemValue) => setSelectedEvent(itemValue)}
+               style={styles.compactPicker}
+             >
+               {events.map(event => (
+                 <Picker.Item key={event.key} label={event.name} value={event.key} color="#000000" />
+               ))}
+             </Picker>
+           </View>
+         )}
+       </View>
 
-      {/* Table Header */}
-      <View style={styles.matchesSection}>
+       <View style={styles.matchesSection}>
         <View style={[styles.tableHeader, { backgroundColor: theme.colors.surface }]}>
           <View style={styles.matchColumn}>
             <Text style={[styles.tableHeaderText, { color: theme.colors.text }]}>Match</Text>
           </View>
           
-          {/* Red Alliance Headers */}
           <View style={styles.teamColumn}>
             <Text style={[styles.tableHeaderText, { color: '#FF4444' }]}>Red 1</Text>
           </View>
@@ -350,7 +414,6 @@ export default function HomeScreen({ navigation }) {
             <Text style={[styles.tableHeaderText, { color: '#FF4444' }]}>Red 3</Text>
           </View>
           
-          {/* Blue Alliance Headers */}
           <View style={styles.teamColumn}>
             <Text style={[styles.tableHeaderText, { color: '#4444FF' }]}>Blue 1</Text>
           </View>
@@ -361,7 +424,6 @@ export default function HomeScreen({ navigation }) {
             <Text style={[styles.tableHeaderText, { color: '#4444FF' }]}>Blue 3</Text>
           </View>
           
-          {/* Score Headers at the end */}
           <View style={styles.scoreColumn}>
             <Text style={[styles.tableHeaderText, { color: '#FF4444' }]}>Red Score</Text>
           </View>
@@ -378,15 +440,22 @@ export default function HomeScreen({ navigation }) {
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar style={theme.colors.statusBar} />
       
-      <FlatList
-        data={currentMatches}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderMatch}
-        ListHeaderComponent={renderHeader}
-        showsVerticalScrollIndicator={false}
-        ItemSeparatorComponent={() => <View style={styles.tableSeparator} />}
-        contentContainerStyle={styles.contentContainer}
-      />
+      {matchesLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={[styles.loadingText, { color: theme.colors.text }]}>Loading matches...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={currentMatches}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderMatch}
+          ListHeaderComponent={renderHeader}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View style={styles.tableSeparator} />}
+          contentContainerStyle={styles.contentContainer}
+        />
+      )}
     </View>
   );
 }
@@ -621,6 +690,90 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     fontSize: 14,
+    fontWeight: '500',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+  },
+  epaSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  epaSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  allianceEpaContainer: {
+    marginBottom: 12,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 2,
+  },
+  redAllianceContainer: {
+    backgroundColor: '#DC3545',
+    borderColor: '#B02A37',
+  },
+  blueAllianceContainer: {
+    backgroundColor: '#007BFF',
+    borderColor: '#0056B3',
+  },
+  allianceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  allianceTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  allianceStats: {
+    alignItems: 'flex-end',
+  },
+  allianceTotalEPA: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  allianceWinProb: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  teamsEpaContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 8,
+  },
+  teamEpaRow: {
+    alignItems: 'center',
+    flex: 1,
+    paddingHorizontal: 4,
+  },
+  teamEpaNumber: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  teamEpaValue: {
+    fontSize: 12,
+    marginBottom: 1,
+  },
+  teamWinProb: {
+    fontSize: 12,
     fontWeight: '500',
   },
 });

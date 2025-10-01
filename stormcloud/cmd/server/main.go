@@ -4,47 +4,92 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 
 	"github.com/CouchPugtato/StormCloud/internal/api"
+	"github.com/CouchPugtato/StormCloud/internal/db"
+	"github.com/CouchPugtato/StormCloud/internal/ingest"
 	"github.com/CouchPugtato/StormCloud/internal/jobs"
 	"github.com/CouchPugtato/StormCloud/internal/realtime"
 )
 
 func main() {
-	_ = godotenv.Load() // load .env if present
-
-	databasePath := os.Getenv("database_PATH")
-	if databasePath == "" {
-		databasePath = "./app.database"
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found")
 	}
 
-	sqldatabase, err := database.Open(databasePath)
+	dbPath := os.Getenv("DATABASE_PATH")
+	if dbPath == "" {
+		dbPath = "./app.db"
+	}
+
+	database, err := db.Open(dbPath)
 	if err != nil {
-		log.Fatal("open database:", err)
+		log.Fatal("Failed to open database:", err)
 	}
-	if err := database.Migrate(sqldatabase); err != nil {
-		log.Fatal("migrate:", err)
+	defer database.Close()
+
+	if err := db.Migrate(database); err != nil {
+		log.Fatal("Failed to migrate database:", err)
 	}
 
-	// start a periodic sync job (stub)
-	spec := os.Getenv("SYNC_CRON")
-	if spec == "" {
-		spec = "*/10 * * * *"
-	} // every 10 min
-	stopCron := jobs.Start(spec, func() {
-		log.Println("sync tick ... (call TBA/Statbotics here)")
+	tbaKey := os.Getenv("TBA_KEY")
+	statboticsKey := os.Getenv("STATBOTICS_API_KEY")
+	currentYear := 2024
+	if yearStr := os.Getenv("CURRENT_YEAR"); yearStr != "" {
+		if year, err := strconv.Atoi(yearStr); err == nil {
+			currentYear = year
+		}
+	}
+
+	syncService := ingest.NewSyncService(database)
+	syncService.SetAPIKeys(tbaKey, statboticsKey)
+	syncService.SetCurrentYear(currentYear)
+	
+	if err := syncService.LoadEventsConfig("./events_config.json"); err != nil {
+		log.Printf("Failed to load events config: %v", err)
+	}
+
+	log.Println("Running initial sync on startup...")
+	if err := syncService.FullSync(); err != nil {
+		log.Printf("Initial sync failed: %v", err)
+	} else {
+		log.Println("Initial sync completed successfully")
+	}
+
+	normalCronSpec := os.Getenv("SYNC_CRON")
+	if normalCronSpec == "" {
+		normalCronSpec = "0 */2 * * *"
+	}
+	
+	eventCronSpec := os.Getenv("EVENT_SYNC_CRON")
+	if eventCronSpec == "" {
+		eventCronSpec = "*/3 * * * *"
+	}
+
+	scheduler := jobs.NewScheduler(normalCronSpec, eventCronSpec, func() error {
+		log.Println("Starting sync job...")
+		if err := syncService.FullSync(); err != nil {
+			log.Printf("Sync job failed: %v", err)
+			return err
+		}
+		log.Println("Sync job completed successfully")
+		return nil
 	})
-	defer stopCron()
+	scheduler.Start()
+	defer scheduler.Stop()
 
 	hub := realtime.NewHub()
-	r := api.Router(sqldatabase, hub)
+
+	router := api.Router(database, hub, syncService, scheduler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	log.Println("listening on :" + port)
-	log.Fatal(http.ListenAndServe(":"+port, r))
+
+	log.Printf("Server starting on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, router))
 }

@@ -56,7 +56,6 @@ export const typography = {
 };
 
 export const globalStyles = StyleSheet.create({
-  // layout
   container: {
     flex: 1,
     backgroundColor: colors.background,

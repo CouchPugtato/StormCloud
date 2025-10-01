@@ -15,6 +15,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import PlatformDemoScreen from '../screens/PlatformDemoScreen';
 import MatchScoutingForm from '../components/MatchScoutingForm';
+import PitScoutingForm from '../components/PitScoutingForm';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -65,6 +66,10 @@ function TeamsStack() {
       <Stack.Screen 
         name="TeamDetail" 
         component={TeamDetailScreen} 
+      />
+      <Stack.Screen 
+        name="PitScoutingForm" 
+        component={PitScoutingForm} 
       />
     </Stack.Navigator>
   );

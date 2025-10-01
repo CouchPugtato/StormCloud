@@ -8,41 +8,52 @@ import {
   TextInput,
   Alert,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
+import apiService from '../utils/apiService';
 
 export default function MatchScoutingForm({ route, navigation }) {
   const { theme } = useTheme();
   const { teamNumber, matchData } = route.params;
+  const [saving, setSaving] = useState(false);
   
-  // scouting form state
+  // scouting form state - 2025 FRC game fields
   const [scoutingData, setScoutingData] = useState({
-    // auto period
+    // scout info
+    scoutName: '',
+    
+    // auto period - coral scoring
+    autoCoralL1: 0,
+    autoCoralL2: 0,
+    autoCoralL3: 0,
+    autoCoralL4: 0,
+    autoAlgaeNet: 0,
+    autoAlgaeProcessor: 0,
+    autoReef: 0,
     autoMobility: false,
-    autoSpeakerNotes: 0,
-    autoAmpNotes: 0,
-    autoMissed: 0,
     
     // teleop period
-    teleopSpeakerNotes: 0,
-    teleopAmpNotes: 0,
-    teleopMissed: 0,
-    teleopTrap: 0,
+    teleopCoralL1: 0,
+    teleopCoralL2: 0,
+    teleopCoralL3: 0,
+    teleopCoralL4: 0,
+    teleopAlgaeNet: 0,
+    teleopAlgaeProcessor: 0,
+    teleopReef: 0,
     
     // endgame
-    climbAttempted: false,
-    climbSuccessful: false,
-    climbTime: '',
-    harmony: false,
+    climbLevel: 'None', // None, Low, High
+    climbTime: 0,
     
-    // defense and penalties
+    // performance ratings
     defenseRating: 0, // 0-5 scale
-    penaltiesReceived: 0,
+    speedRating: 0, // 0-5 scale
+    stabilityRating: 0, // 0-5 scale
     
     // general notes
     robotBroke: false,
-    driverSkill: 0, // 0-5 scale
     generalNotes: '',
   });
 
@@ -67,16 +78,63 @@ export default function MatchScoutingForm({ route, navigation }) {
     }));
   };
 
-  const saveScoutingData = () => {
-    // TODO: save to database/storage
-    Alert.alert(
-      'Scouting Data Saved',
-      `Data for Team ${teamNumber} in ${matchData.matchNumber} has been saved.`,
-      [
-        { text: 'Continue Scouting', style: 'default' },
-        { text: 'Back to Matches', onPress: () => navigation.goBack() }
-      ]
-    );
+  const saveScoutingData = async () => {
+    try {
+      setSaving(true);
+      
+      const scoutingPayload = {
+        match_key: `${matchData.matchNumber}`,
+        team_key: `frc${teamNumber}`,
+        scout_name: scoutingData.scoutName,
+        
+        auto_coral_l1: scoutingData.autoCoralL1,
+        auto_coral_l2: scoutingData.autoCoralL2,
+        auto_coral_l3: scoutingData.autoCoralL3,
+        auto_coral_l4: scoutingData.autoCoralL4,
+        auto_algae_net: scoutingData.autoAlgaeNet,
+        auto_algae_processor: scoutingData.autoAlgaeProcessor,
+        auto_reef: scoutingData.autoReef,
+        auto_mobility: scoutingData.autoMobility,
+        
+        teleop_coral_l1: scoutingData.teleopCoralL1,
+        teleop_coral_l2: scoutingData.teleopCoralL2,
+        teleop_coral_l3: scoutingData.teleopCoralL3,
+        teleop_coral_l4: scoutingData.teleopCoralL4,
+        teleop_algae_net: scoutingData.teleopAlgaeNet,
+        teleop_algae_processor: scoutingData.teleopAlgaeProcessor,
+        teleop_reef: scoutingData.teleopReef,
+        
+        climb_level: scoutingData.climbLevel,
+        climb_time: scoutingData.climbTime,
+        
+        defense_rating: scoutingData.defenseRating,
+        speed_rating: scoutingData.speedRating,
+        stability_rating: scoutingData.stabilityRating,
+        
+        robot_broke: scoutingData.robotBroke,
+        general_notes: scoutingData.generalNotes,
+      };
+      
+      await apiService.submitMatchScoutingData(scoutingPayload);
+      
+      Alert.alert(
+        'Success!',
+        `Scouting data for Team ${teamNumber} in ${matchData.matchNumber} has been saved to the database.`,
+        [
+          { text: 'Continue Scouting', style: 'default' },
+          { text: 'Back to Matches', onPress: () => navigation.goBack() }
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to save scouting data:', error);
+      Alert.alert(
+        'Error',
+        'Failed to save scouting data. Please check your connection and try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const renderCounter = (label, field, color = theme.colors.primary) => (
@@ -151,6 +209,26 @@ export default function MatchScoutingForm({ route, navigation }) {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Scout Information */}
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Scout Information</Text>
+          
+          <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Scout Name</Text>
+            <TextInput
+              style={[styles.textInput, { 
+                backgroundColor: theme.colors.background,
+                color: theme.colors.text,
+                borderColor: theme.colors.border
+              }]}
+              placeholder="Enter your name"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={scoutingData.scoutName}
+              onChangeText={(value) => updateField('scoutName', value)}
+            />
+          </View>
+        </View>
+
         {/* Autonomous Period */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Autonomous Period</Text>
@@ -164,67 +242,65 @@ export default function MatchScoutingForm({ route, navigation }) {
             />
           </View>
 
-          {renderCounter('Speaker Notes', 'autoSpeakerNotes', '#4CAF50')}
-          {renderCounter('Amp Notes', 'autoAmpNotes', '#FF9800')}
-          {renderCounter('Missed Shots', 'autoMissed', '#F44336')}
+          {renderCounter('Coral Level 1', 'autoCoralL1', '#4CAF50')}
+          {renderCounter('Coral Level 2', 'autoCoralL2', '#8BC34A')}
+          {renderCounter('Coral Level 3', 'autoCoralL3', '#CDDC39')}
+          {renderCounter('Coral Level 4', 'autoCoralL4', '#FFEB3B')}
+          {renderCounter('Algae Net', 'autoAlgaeNet', '#FF9800')}
+          {renderCounter('Algae Processor', 'autoAlgaeProcessor', '#FF5722')}
+          {renderCounter('Reef', 'autoReef', '#9C27B0')}
         </View>
 
         {/* Teleop Period */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Teleop Period</Text>
           
-          {renderCounter('Speaker Notes', 'teleopSpeakerNotes', '#4CAF50')}
-          {renderCounter('Amp Notes', 'teleopAmpNotes', '#FF9800')}
-          {renderCounter('Missed Shots', 'teleopMissed', '#F44336')}
-          {renderCounter('Trap Notes', 'teleopTrap', '#9C27B0')}
+          {renderCounter('Coral Level 1', 'teleopCoralL1', '#4CAF50')}
+          {renderCounter('Coral Level 2', 'teleopCoralL2', '#8BC34A')}
+          {renderCounter('Coral Level 3', 'teleopCoralL3', '#CDDC39')}
+          {renderCounter('Coral Level 4', 'teleopCoralL4', '#FFEB3B')}
+          {renderCounter('Algae Net', 'teleopAlgaeNet', '#FF9800')}
+          {renderCounter('Algae Processor', 'teleopAlgaeProcessor', '#FF5722')}
+          {renderCounter('Reef', 'teleopReef', '#9C27B0')}
         </View>
 
         {/* Endgame */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Endgame</Text>
           
-          <View style={styles.switchContainer}>
-            <Text style={[styles.switchLabel, { color: theme.colors.text }]}>Climb Attempted</Text>
-            <Switch
-              value={scoutingData.climbAttempted}
-              onValueChange={(value) => updateField('climbAttempted', value)}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-            />
+          <View style={styles.ratingContainer}>
+            <Text style={[styles.ratingLabel, { color: theme.colors.text }]}>Climb Level</Text>
+            <View style={styles.ratingButtons}>
+              {['None', 'Low', 'High'].map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.ratingButton,
+                    {
+                      backgroundColor: scoutingData.climbLevel === level 
+                        ? theme.colors.primary 
+                        : 'transparent',
+                      borderColor: theme.colors.primary
+                    }
+                  ]}
+                  onPress={() => updateField('climbLevel', level)}
+                >
+                  <Text style={[
+                    styles.ratingButtonText,
+                    {
+                      color: scoutingData.climbLevel === level 
+                        ? 'white' 
+                        : theme.colors.text
+                    }
+                  ]}>
+                    {level}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
-          <View style={styles.switchContainer}>
-            <Text style={[styles.switchLabel, { color: theme.colors.text }]}>Climb Successful</Text>
-            <Switch
-              value={scoutingData.climbSuccessful}
-              onValueChange={(value) => updateField('climbSuccessful', value)}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-            />
-          </View>
-
-          <View style={styles.switchContainer}>
-            <Text style={[styles.switchLabel, { color: theme.colors.text }]}>Harmony</Text>
-            <Switch
-              value={scoutingData.harmony}
-              onValueChange={(value) => updateField('harmony', value)}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Climb Time (seconds)</Text>
-            <TextInput
-              style={[styles.textInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="e.g., 15"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={scoutingData.climbTime}
-              onChangeText={(value) => updateField('climbTime', value)}
-              keyboardType="numeric"
-            />
-          </View>
+          {renderCounter('Climb Time (seconds)', 'climbTime', '#9C27B0')}
         </View>
 
         {/* Performance Ratings */}
@@ -232,15 +308,15 @@ export default function MatchScoutingForm({ route, navigation }) {
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Performance Ratings</Text>
           
           {renderRatingSelector('Defense Rating (0-5)', 'defenseRating')}
-          {renderRatingSelector('Driver Skill (0-5)', 'driverSkill')}
-          {renderCounter('Penalties Received', 'penaltiesReceived', '#F44336')}
+          {renderRatingSelector('Speed Rating (0-5)', 'speedRating')}
+          {renderRatingSelector('Stability Rating (0-5)', 'stabilityRating')}
           
           <View style={styles.switchContainer}>
-            <Text style={[styles.switchLabel, { color: theme.colors.text }]}>Robot Broke Down</Text>
+            <Text style={[styles.switchLabel, { color: theme.colors.text }]}>Robot Broke</Text>
             <Switch
               value={scoutingData.robotBroke}
               onValueChange={(value) => updateField('robotBroke', value)}
-              trackColor={{ false: theme.colors.border, true: '#F44336' }}
+              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
             />
           </View>
         </View>
@@ -266,10 +342,21 @@ export default function MatchScoutingForm({ route, navigation }) {
 
         {/* Save Button */}
         <TouchableOpacity
-          style={[styles.saveButton, { backgroundColor: theme.colors.primary }]}
+          style={[styles.saveButton, { 
+            backgroundColor: theme.colors.primary,
+            opacity: saving ? 0.6 : 1
+          }]}
           onPress={saveScoutingData}
+          disabled={saving}
         >
-          <Text style={styles.saveButtonText}>Save Scouting Data</Text>
+          {saving ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <Ionicons name="save-outline" size={20} color="white" />
+          )}
+          <Text style={[styles.saveButtonText, { marginLeft: saving ? 0 : 8 }]}>
+            {saving ? 'Saving...' : 'Save Scouting Data'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -397,6 +484,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: 12,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
     marginBottom: 30,
   },
   saveButtonText: {
