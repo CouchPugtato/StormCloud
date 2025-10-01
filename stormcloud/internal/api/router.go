@@ -39,7 +39,7 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Get("/events/{event_key}", EventGet(db))
 		r.Get("/events/{event_key}/matches", EventMatches(db))
 
-		r.Get("/form/{year}", FormJSON(db)) // returns the current JSON form spec
+		r.Get("/form/{year}", FormJSON(db))
 		r.Post("/scout/submit", ScoutSubmit(db))
 		
 		r.Post("/match-scouting", MatchScoutingSubmit(db))
@@ -52,7 +52,10 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Get("/notes", NotesList(db))
 		r.Post("/notes", NotesCreate(db))
 
-		r.Post("/devices", DeviceRegister(db)) // register push tokens
+		r.Post("/devices", DeviceRegister(db))
+		
+		r.Post("/auth", AuthenticatePassword())
+		r.Get("/app-settings", AppSettingsGet())
 		
 		r.Get("/event-mode", EventModeGet(scheduler))
 		r.Post("/event-mode", EventModeSet(scheduler))

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Switch,
   Platform,
   Alert,
+  TextInput,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +24,23 @@ export default function SettingsScreen() {
     autoUpdate: true,
   });
 
+  const [twitchUrl, setTwitchUrl] = useState('');
+  const [isEditingTwitch, setIsEditingTwitch] = useState(false);
+
+  useEffect(() => {
+    fetchTwitchUrl();
+  }, []);
+
+  const fetchTwitchUrl = async () => {
+    try {
+      const response = await fetch('http://localhost:/api/v1/app-settings');
+      const data = await response.json();
+      setTwitchUrl(data.twitch_channel_url || '');
+    } catch (error) {
+      console.error('Error fetching Twitch URL:', error);
+    }
+  };
+
   const toggleSetting = (key) => {
     setSettings(prev => ({
       ...prev,
@@ -35,6 +53,35 @@ export default function SettingsScreen() {
       window.alert(`${title}\n\n${message}`);
     } else {
       Alert.alert(title, message, [{ text: 'OK' }]);
+    }
+  };
+
+  const showTwitchUrlInput = () => {
+    if (Platform.OS === 'web') {
+      const newUrl = window.prompt('Enter Twitch Channel URL:', twitchUrl);
+      if (newUrl !== null) {
+        setTwitchUrl(newUrl);
+        showInfo('Success', 'Twitch channel URL updated successfully!');
+      }
+    } else {
+      Alert.prompt(
+        'Twitch Channel URL',
+        'Enter the Twitch channel URL:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Save',
+            onPress: (newUrl) => {
+              if (newUrl !== undefined) {
+                setTwitchUrl(newUrl);
+                showInfo('Success', 'Twitch channel URL updated successfully!');
+              }
+            },
+          },
+        ],
+        'plain-text',
+        twitchUrl
+      );
     }
   };
 
@@ -90,6 +137,20 @@ export default function SettingsScreen() {
           type: 'toggle',
           value: isEventMode,
           onToggle: toggleEventMode,
+        },
+      ],
+    },
+    {
+      title: 'Stream Settings',
+      items: [
+        {
+          key: 'twitchUrl',
+          title: 'Twitch Channel URL',
+          subtitle: twitchUrl || 'No Twitch channel configured',
+          icon: 'videocam',
+          type: 'input',
+          value: twitchUrl,
+          onPress: showTwitchUrlInput,
         },
       ],
     },
@@ -153,7 +214,7 @@ export default function SettingsScreen() {
         style={[styles.settingItem, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.borderLight }, isDisabled && styles.disabledItem]}
         onPress={item.onPress}
         disabled={item.type === 'toggle' || isDisabled}
-        activeOpacity={item.type === 'info' ? 0.7 : 1}
+        activeOpacity={item.type === 'info' || item.type === 'input' ? 0.7 : 1}
       >
         <View style={styles.settingLeft}>
           <View style={[styles.settingIcon, { backgroundColor: isDarkMode ? theme.colors.border : '#f0f8ff' }, isDisabled && styles.disabledIcon]}>
@@ -190,6 +251,8 @@ export default function SettingsScreen() {
               thumbColor={item.value ? theme.colors.accent : theme.colors.textSecondary}
               disabled={isDisabled}
             />
+          ) : item.type === 'input' ? (
+            <Ionicons name="create-outline" size={20} color={theme.colors.textSecondary} />
           ) : (
             <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
           )}

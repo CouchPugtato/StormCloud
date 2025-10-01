@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -305,6 +306,39 @@ func ScoutSubmit(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, 200, map[string]any{"ok": true})
+	}
+}
+
+// --- AUTHENTICATION
+func AuthenticatePassword() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Password string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+		
+		expectedPassword := os.Getenv("ACCESS_PASSWORD")
+		if expectedPassword == "" {
+			writeJSON(w, 500, map[string]string{"error": "server configuration error"})
+			return
+		}
+		
+		if in.Password == expectedPassword {
+			writeJSON(w, 200, map[string]any{"authenticated": true})
+		} else {
+			writeJSON(w, 401, map[string]string{"error": "invalid password"})
+		}
+	}
+}
+
+// --- APP SETTINGS
+func AppSettingsGet() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		settings := map[string]string{
+			"twitch_channel_url": os.Getenv("TWITCH_CHANNEL_URL"),
+		}
+		writeJSON(w, 200, settings)
 	}
 }
 

@@ -18,8 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useEventMode } from '../contexts/EventModeContext';
 import apiService from '../utils/apiService';
 import { calculateWinProbability, formatEPA, formatWinProbability } from '../utils/epaCalculations';
+import TwitchStream from '../components/TwitchStream';
 
 const { width, height } = Dimensions.get('window');
 const isMobile = height > width; // mobile devices have height > width
@@ -27,6 +29,7 @@ const isMobile = height > width; // mobile devices have height > width
 export default function HomeScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme();
   const { user } = useAuth();
+  const { isEventMode } = useEventMode();
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [expandedMatch, setExpandedMatch] = useState(null);
   const [matchNotes, setMatchNotes] = useState({});
@@ -370,6 +373,9 @@ export default function HomeScreen({ navigation }) {
           FRC Scouting & Match Analysis Platform by Team 509
         </Text>
       </LinearGradient>
+      
+      {isEventMode && <TwitchStream />}
+      
        <View style={styles.eventDropdownContainer}>
          <Text style={[styles.eventsLabel, { color: theme.colors.text }]}>Events</Text>
          {loading ? (
