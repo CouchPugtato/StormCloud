@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Dimensions, Platform, Text, TouchableOpacity, Linking } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { getApiBaseURL } from '../utils/config';
 import { Ionicons } from '@expo/vector-icons';
 
 const TwitchStream = () => {
@@ -49,7 +50,7 @@ const TwitchStream = () => {
 
   const fetchTwitchUrl = async () => {
     try {
-      const response = await fetch('http://localhost:8090/api/v1/app-settings');
+      const response = await fetch(`${getApiBaseURL()}/app-settings`);
       const data = await response.json();
       
       if (data.twitch_channel_url && data.twitch_channel_url.trim() !== '') {
@@ -67,7 +68,9 @@ const TwitchStream = () => {
     
     const channelName = channelUrl.split('/').pop();
     
-    return `https://player.twitch.tv/?channel=${channelName}&parent=localhost&parent=127.0.0.1&autoplay=false&muted=false`;
+    // Allow embedding from the current hostname in production
+    const parents = Platform.OS === 'web' ? [`parent=${window.location.hostname}`] : ['parent=localhost', 'parent=127.0.0.1'];
+    return `https://player.twitch.tv/?channel=${channelName}&${parents.join('&')}&autoplay=false&muted=false`;
   };
 
   const openTwitchInBrowser = () => {

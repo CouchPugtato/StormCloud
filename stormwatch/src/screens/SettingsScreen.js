@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useEventMode } from '../contexts/EventModeContext';
+import { getApiBaseURL } from '../utils/config';
 
 export default function SettingsScreen() {
   const { theme, isDarkMode, themePreference, toggleTheme, setSystemTheme } = useTheme();
@@ -33,7 +34,7 @@ export default function SettingsScreen() {
 
   const fetchTwitchUrl = async () => {
     try {
-      const response = await fetch('http://localhost:/api/v1/app-settings');
+      const response = await fetch(`${getApiBaseURL()}/app-settings`);
       const data = await response.json();
       setTwitchUrl(data.twitch_channel_url || '');
     } catch (error) {

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiBaseURL } from '../utils/config';
 
 const EventModeContext = createContext();
 
@@ -22,7 +23,7 @@ export const EventModeProvider = ({ children }) => {
   const loadEventModeState = async () => {
     try {
       try {
-        const response = await fetch('http://localhost:8090/api/v1/event-mode');
+        const response = await fetch(`${getApiBaseURL()}/event-mode`);
         if (response.ok) {
           const result = await response.json();
           setIsEventMode(result.event_mode);
@@ -49,7 +50,7 @@ export const EventModeProvider = ({ children }) => {
     try {
       const newEventMode = !isEventMode;
       
-      const response = await fetch('http://localhost:8090/api/v1/event-mode', {
+      const response = await fetch(`${getApiBaseURL()}/event-mode`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

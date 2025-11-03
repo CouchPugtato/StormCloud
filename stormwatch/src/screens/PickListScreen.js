@@ -31,6 +31,50 @@ export default function PickListScreen({ navigation }) {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState(null);
 
+  // Load persisted pick list on mount
+  useEffect(() => {
+    const loadPickList = async () => {
+      try {
+        const items = await apiService.getPickList();
+        // Map backend items to local state shape
+        const loadedList = items.map(it => ({
+          id: it.team_num,
+          name: it.name || it.TeamName || `Team ${it.team_num}`,
+          location: (it.city && it.state) ? `${it.city}, ${it.state}` : '',
+          teamKey: it.team_key,
+        }));
+        setPickList(loadedList);
+        // Notes map
+        const notesMap = {};
+        items.forEach(it => { notesMap[it.team_num] = it.notes || ''; });
+        setTeamNotes(notesMap);
+        // Strikethrough set
+        const struck = new Set();
+        items.forEach(it => { if (it.struck_through) struck.add(it.team_num); });
+        setStruckThroughTeams(struck);
+      } catch (err) {
+        console.error('Failed to load pick list:', err);
+      }
+    };
+    loadPickList();
+  }, []);
+
+  const persistPickList = async () => {
+    try {
+      const items = pickList.map((team, index) => ({
+        team_key: team.teamKey || `frc${team.id}`,
+        team_num: team.id,
+        rank: index + 1,
+        notes: teamNotes[team.id] || '',
+        struck_through: struckThroughTeams.has(team.id),
+      }));
+      await apiService.savePickList('', items);
+    } catch (err) {
+      console.error('Failed to save pick list:', err);
+      Alert.alert('Save Failed', 'Could not save pick list to server.');
+    }
+  };
+
   useEffect(() => {
     if (showAddModal && availableTeams.length === 0) {
       fetchTeams();
@@ -92,9 +136,14 @@ export default function PickListScreen({ navigation }) {
 
   // add team to pick list
   const addTeamToPickList = (team) => {
-    setPickList(prev => [...prev, team]);
+    setPickList(prev => {
+      const updated = [...prev, team];
+      return updated;
+    });
     setShowAddModal(false);
     setSearchQuery('');
+    // persist after adding
+    setTimeout(() => { persistPickList(); }, 0);
   };
 
   // remove team from pick list
@@ -110,6 +159,8 @@ export default function PickListScreen({ navigation }) {
       delete newNotes[teamId];
       return newNotes;
     });
+    // persist after removal
+    setTimeout(() => { persistPickList(); }, 0);
   };
 
   // update team notes (temporary storage)
@@ -127,6 +178,8 @@ export default function PickListScreen({ navigation }) {
         delete newUnsaved[teamId];
         return newUnsaved;
       });
+      // persist after notes save
+      setTimeout(() => { persistPickList(); }, 0);
     }
   };
 
@@ -141,6 +194,8 @@ export default function PickListScreen({ navigation }) {
       }
       return newSet;
     });
+    // persist after toggle
+    setTimeout(() => { persistPickList(); }, 0);
   };
 
   // top open team is highlighted
@@ -155,6 +210,8 @@ export default function PickListScreen({ navigation }) {
         [newList[index - 1], newList[index]] = [newList[index], newList[index - 1]];
         return newList;
       });
+      // persist after reorder
+      setTimeout(() => { persistPickList(); }, 0);
     }
   };
 
@@ -165,6 +222,8 @@ export default function PickListScreen({ navigation }) {
         [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
         return newList;
       });
+      // persist after reorder
+      setTimeout(() => { persistPickList(); }, 0);
     }
   };
 
@@ -281,9 +340,9 @@ export default function PickListScreen({ navigation }) {
   const renderEmptyState = () => (
     <View style={[styles.emptyState, { backgroundColor: theme.colors.surface }]}>
       <Ionicons name="list-outline" size={64} color={theme.colors.textSecondary} />
-      <Text style={[styles.emptyStateTitle, { color: theme.colors.text }]}>Your Pick List is Empty</Text>
+      <Text style={[styles.emptyStateTitle, { color: theme.colors.text }]}>The Pick List is Empty</Text>
       <Text style={[styles.emptyStateText, { color: theme.colors.textSecondary }]}>
-        Tap the "Add Teams" button to start building your strategic pick list for alliance selection.
+        Tap the "Add Teams" button to start building the pick list for alliance selection.
       </Text>
     </View>
   );
@@ -370,7 +429,8 @@ export default function PickListScreen({ navigation }) {
                           ...item,
                           id: teamNumber,
                           name: teamName,
-                          location: teamLocation
+                          location: teamLocation,
+                          teamKey: `frc${teamNumber}`
                         })}
                       >
                         <Ionicons name="add" size={20} color="white" />

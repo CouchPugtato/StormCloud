@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://localhost:8090/api/v1';
+import { getApiBaseURL } from './config';
+
+const API_BASE_URL = getApiBaseURL();
 
 class ApiService {
   constructor() {
@@ -154,6 +156,19 @@ class ApiService {
       console.error('Failed to fetch EPA data:', error);
       return {};
     }
+  }
+
+  // Pick list endpoints
+  async getPickList(eventKey = '') {
+    const q = eventKey && eventKey.trim() !== '' ? `?event_key=${encodeURIComponent(eventKey.trim())}` : '';
+    return this.request(`/pick-list${q}`);
+  }
+
+  async savePickList(eventKey = '', items = []) {
+    return this.request('/pick-list', {
+      method: 'POST',
+      body: JSON.stringify({ event_key: eventKey || '', items }),
+    });
   }
 }
 

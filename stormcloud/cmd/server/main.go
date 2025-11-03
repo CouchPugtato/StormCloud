@@ -1,18 +1,18 @@
 package main
 
 import (
-	"log"
-	"net/http"
-	"os"
-	"strconv"
+    "log"
+    "net/http"
+    "os"
+    "strconv"
 
-	"github.com/joho/godotenv"
+    "github.com/joho/godotenv"
 
-	"github.com/CouchPugtato/StormCloud/internal/api"
-	"github.com/CouchPugtato/StormCloud/internal/db"
-	"github.com/CouchPugtato/StormCloud/internal/ingest"
-	"github.com/CouchPugtato/StormCloud/internal/jobs"
-	"github.com/CouchPugtato/StormCloud/internal/realtime"
+    "github.com/CouchPugtato/StormCloud/internal/api"
+    "github.com/CouchPugtato/StormCloud/internal/db"
+    "github.com/CouchPugtato/StormCloud/internal/ingest"
+    "github.com/CouchPugtato/StormCloud/internal/jobs"
+    "github.com/CouchPugtato/StormCloud/internal/realtime"
 )
 
 func main() {
@@ -36,8 +36,8 @@ func main() {
 	}
 
 	tbaKey := os.Getenv("TBA_KEY")
-	statboticsKey := os.Getenv("STATBOTICS_API_KEY")
-	currentYear := 2024
+	statboticsKey := os.Getenv("CURRENT_YEAR")
+	currentYear := 2025
 	if yearStr := os.Getenv("CURRENT_YEAR"); yearStr != "" {
 		if year, err := strconv.Atoi(yearStr); err == nil {
 			currentYear = year
@@ -47,7 +47,7 @@ func main() {
 	syncService := ingest.NewSyncService(database)
 	syncService.SetAPIKeys(tbaKey, statboticsKey)
 	syncService.SetCurrentYear(currentYear)
-	
+
 	if err := syncService.LoadEventsConfig("./events_config.json"); err != nil {
 		log.Printf("Failed to load events config: %v", err)
 	}
@@ -63,7 +63,7 @@ func main() {
 	if normalCronSpec == "" {
 		normalCronSpec = "0 */2 * * *"
 	}
-	
+
 	eventCronSpec := os.Getenv("EVENT_SYNC_CRON")
 	if eventCronSpec == "" {
 		eventCronSpec = "*/3 * * * *"
@@ -85,11 +85,18 @@ func main() {
 
 	router := api.Router(database, hub, syncService, scheduler)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "8080"
+    }
 
-	log.Printf("Server starting on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, router))
+    // Allow binding to a specific address (e.g., 127.0.0.1:8090) via env var.
+    // If BIND_ADDR is not set, default to ":<PORT>" which listens on all interfaces.
+    bindAddr := os.Getenv("BIND_ADDR")
+    if bindAddr == "" {
+        bindAddr = ":" + port
+    }
+
+    log.Printf("Server starting on %s", bindAddr)
+    log.Fatal(http.ListenAndServe(bindAddr, router))
 }
