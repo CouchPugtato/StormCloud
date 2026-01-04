@@ -36,7 +36,7 @@ function HomeStack() {
       <Stack.Screen 
         name="HomeMain" 
         component={HomeScreen} 
-        options={{ title: 'StormWatch' }}
+        options={{ title: 'StormCloud' }}
       />
       <Stack.Screen 
         name="PlatformDemo" 

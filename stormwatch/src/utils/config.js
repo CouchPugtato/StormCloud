@@ -10,7 +10,7 @@ export const getApiBaseURL = () => {
     return '/api';
   }
   // Default for native/dev
-  return 'http://localhost:8090/api/v1';
+  return 'http://localhost:8080/api/v1';
 };
 
 export default { getApiBaseURL };

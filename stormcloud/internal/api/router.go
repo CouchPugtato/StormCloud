@@ -19,6 +19,9 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
     
     // Configure CORS from environment, with sensible defaults for dev and production
     allowedOriginsEnv := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+    if allowedOriginsEnv == "" {
+        allowedOriginsEnv = strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
+    }
     var allowedOrigins []string
     if allowedOriginsEnv != "" {
         parts := strings.Split(allowedOriginsEnv, ",")

@@ -80,7 +80,7 @@ func NewSyncService(db *sql.DB) *SyncService {
 		db:          db,
 		tbaLimiter:  NewRateLimiter(2.0), // TBA allows ~2 requests per second
 		sbLimiter:   NewRateLimiter(5.0), // Statbotics is more generous
-		currentYear: 2024,
+		currentYear: 2025,
 	}
 }
 

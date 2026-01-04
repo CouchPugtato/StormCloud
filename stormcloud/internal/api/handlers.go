@@ -99,7 +99,7 @@ func TeamGet(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		epaYear := os.Getenv("STATBOTICS_API_KEY")
+		epaYear := os.Getenv("CURRENT_YEAR")
 		epaRow := db.QueryRow(`SELECT payload FROM epa_team_year WHERE team_num=? AND year=?`, t.TeamNum, epaYear)
 		var epaJSON string
 		if err := epaRow.Scan(&epaJSON); err == nil {
@@ -431,7 +431,7 @@ func FormJSON(_ *sql.DB) http.HandlerFunc {
 		"version": "2025.1",
 		"fields": []field{
 			{Key: "auto_coral_l4", Label: "Auto Coral L4", Type: "number"},
-			{Key: "climb_level", Label: "Climb Level", Type: "select", Options: []string{"None", "Low", "Mid", "High", "Traversal"}},
+			{Key: "climb_level", Label: "Climb Level", Type: "select", Options: []string{"None", "Traversal", "Low", "High"}},
 			{Key: "driver_notes", Label: "Driver Notes", Type: "textarea"},
 		},
 	}

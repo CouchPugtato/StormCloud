@@ -561,6 +561,39 @@ export default function TeamDetailScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
+        {/* Notes Section */}
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Scouting Notes</Text>
+          <TextInput
+            style={[styles.notesTextArea, { backgroundColor: theme.colors.background, color: theme.colors.text, borderColor: theme.colors.border }]}
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Add your observations, strategies, and notes about this team..."
+            placeholderTextColor={theme.colors.textSecondary}
+            multiline
+            numberOfLines={6}
+          />
+          <TouchableOpacity
+            style={[styles.saveButton, { 
+              backgroundColor: scoutingNotesSaved ? theme.colors.secondary : theme.colors.primary, 
+              opacity: savingScoutingNotes ? 0.6 : 1 
+            }]}
+            onPress={saveScoutingNotes}
+            disabled={savingScoutingNotes}
+          >
+            {savingScoutingNotes ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : scoutingNotesSaved ? (
+              <Ionicons name="checkmark-outline" size={20} color="white" />
+            ) : (
+              <Ionicons name="save-outline" size={20} color="white" />
+            )}
+            <Text style={styles.saveButtonText}>
+              {savingScoutingNotes ? 'Saving...' : scoutingNotesSaved ? 'Saved!' : 'Save Scouting Notes'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Match Scouting Section */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Match Scouting Data</Text>
@@ -763,39 +796,6 @@ export default function TeamDetailScreen({ navigation, route }) {
               <Text style={[styles.noDataSubtext, { color: theme.colors.textSecondary }]}>Complete match scouting forms to see detailed performance data</Text>
             </View>
           )}
-        </View>
-
-        {/* Notes Section */}
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Scouting Notes</Text>
-          <TextInput
-            style={[styles.notesTextArea, { backgroundColor: theme.colors.background, color: theme.colors.text, borderColor: theme.colors.border }]}
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Add your observations, strategies, and notes about this team..."
-            placeholderTextColor={theme.colors.textSecondary}
-            multiline
-            numberOfLines={6}
-          />
-          <TouchableOpacity
-            style={[styles.saveButton, { 
-              backgroundColor: scoutingNotesSaved ? theme.colors.secondary : theme.colors.primary, 
-              opacity: savingScoutingNotes ? 0.6 : 1 
-            }]}
-            onPress={saveScoutingNotes}
-            disabled={savingScoutingNotes}
-          >
-            {savingScoutingNotes ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : scoutingNotesSaved ? (
-              <Ionicons name="checkmark-outline" size={20} color="white" />
-            ) : (
-              <Ionicons name="save-outline" size={20} color="white" />
-            )}
-            <Text style={styles.saveButtonText}>
-              {savingScoutingNotes ? 'Saving...' : scoutingNotesSaved ? 'Saved!' : 'Save Scouting Notes'}
-            </Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>

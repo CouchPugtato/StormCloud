@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiBaseURL } from '../utils/config';
 
 const LoginScreen = ({ onAuthenticated }) => {
   const [password, setPassword] = useState('');
@@ -24,7 +24,7 @@ const LoginScreen = ({ onAuthenticated }) => {
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8090/api/v1/auth', {
+      const response = await fetch(`${getApiBaseURL()}/auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -35,7 +35,6 @@ const LoginScreen = ({ onAuthenticated }) => {
       const data = await response.json();
 
       if (response.ok && data.authenticated) {
-        await AsyncStorage.setItem('isAuthenticated', 'true');
         onAuthenticated();
       } else {
         Alert.alert('Error', 'Invalid password');
@@ -55,8 +54,8 @@ const LoginScreen = ({ onAuthenticated }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>StormWatch</Text>
-        <Text style={styles.subtitle}>Enter access code to continue</Text>
+        <Text style={styles.title}>StormCloud</Text>
+        <Text style={styles.subtitle}>Ask your favorite Red Storm leadership member for the acsess code</Text>
         
         <TextInput
           style={styles.input}
@@ -78,7 +77,7 @@ const LoginScreen = ({ onAuthenticated }) => {
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>Access App</Text>
+            <Text style={styles.buttonText}>Verify</Text>
           )}
         </TouchableOpacity>
       </View>

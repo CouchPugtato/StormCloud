@@ -36,7 +36,7 @@ func main() {
 	}
 
 	tbaKey := os.Getenv("TBA_KEY")
-	statboticsKey := os.Getenv("CURRENT_YEAR")
+	statboticsKey := os.Getenv("TBA_KEY")
 	currentYear := 2025
 	if yearStr := os.Getenv("CURRENT_YEAR"); yearStr != "" {
 		if year, err := strconv.Atoi(yearStr); err == nil {
