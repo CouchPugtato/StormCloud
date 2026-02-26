@@ -2,7 +2,6 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -24,24 +23,16 @@ function HomeStack() {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle: {
-          backgroundColor: Platform.OS === 'ios' ? '#f8f9fa' : '#2196F3',
-        },
-        headerTintColor: Platform.OS === 'ios' ? '#000' : '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
+        headerShown: false,
       }}
     >
       <Stack.Screen 
         name="HomeMain" 
         component={HomeScreen} 
-        options={{ title: 'StormCloud' }}
       />
       <Stack.Screen 
         name="PlatformDemo" 
         component={PlatformDemoScreen} 
-        options={{ title: 'Platform Demo' }}
       />
       <Stack.Screen 
         name="MatchScoutingForm" 
