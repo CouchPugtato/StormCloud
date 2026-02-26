@@ -162,10 +162,7 @@ func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
 // --- EVENTS / MATCHES
 func EventsList(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		year := r.URL.Query().Get("year")
-		if year == "" {
-			year = fmt.Sprintf("%d", time.Now().Year())
-		}
+		year := strings.TrimSpace(r.URL.Query().Get("year"))
 
 		configuredKeys := syncService.GetConfiguredTBAKeys()
 		if len(configuredKeys) == 0 {
@@ -175,16 +172,19 @@ func EventsList(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
 
 		placeholders := strings.Repeat("?,", len(configuredKeys)-1) + "?"
 		query := fmt.Sprintf(`
-			SELECT event_key, name, city, state, country, start_date, end_date 
-			FROM events WHERE year=? AND event_key IN (%s)
-			ORDER BY start_date
+			SELECT event_key, name, city, state, country, start_date, end_date
+			FROM events
+			WHERE event_key IN (%s)
 		`, placeholders)
-
-		args := make([]interface{}, 1+len(configuredKeys))
-		args[0] = year
-		for i, key := range configuredKeys {
-			args[i+1] = key
+		args := make([]interface{}, 0, len(configuredKeys)+1)
+		for _, key := range configuredKeys {
+			args = append(args, key)
 		}
+		if year != "" {
+			query += " AND year=?"
+			args = append(args, year)
+		}
+		query += " ORDER BY start_date"
 
 		rows, err := db.Query(query, args...)
 		if err != nil {
@@ -202,7 +202,7 @@ func EventsList(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
 			StartDate string `json:"start_date"`
 			EndDate   string `json:"end_date"`
 		}
-		var out []Event
+		out := make([]Event, 0)
 		for rows.Next() {
 			var e Event
 			_ = rows.Scan(&e.EventKey, &e.Name, &e.City, &e.State, &e.Country, &e.StartDate, &e.EndDate)

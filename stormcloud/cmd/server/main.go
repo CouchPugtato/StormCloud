@@ -1,23 +1,29 @@
 package main
 
 import (
-    "log"
-    "net/http"
-    "os"
-    "strconv"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
 
-    "github.com/joho/godotenv"
+	"github.com/joho/godotenv"
 
-    "github.com/CouchPugtato/StormCloud/internal/api"
-    "github.com/CouchPugtato/StormCloud/internal/db"
-    "github.com/CouchPugtato/StormCloud/internal/ingest"
-    "github.com/CouchPugtato/StormCloud/internal/jobs"
-    "github.com/CouchPugtato/StormCloud/internal/realtime"
+	"github.com/CouchPugtato/StormCloud/internal/api"
+	"github.com/CouchPugtato/StormCloud/internal/db"
+	"github.com/CouchPugtato/StormCloud/internal/ingest"
+	"github.com/CouchPugtato/StormCloud/internal/jobs"
+	"github.com/CouchPugtato/StormCloud/internal/realtime"
 )
 
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
+	}
+
+	appEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	if appEnv == "" {
+		appEnv = "development"
 	}
 
 	dbPath := os.Getenv("DATABASE_PATH")
@@ -85,18 +91,22 @@ func main() {
 
 	router := api.Router(database, hub, syncService, scheduler)
 
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "8080"
-    }
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-    // Allow binding to a specific address (e.g., 127.0.0.1:8090) via env var.
-    // If BIND_ADDR is not set, default to ":<PORT>" which listens on all interfaces.
-    bindAddr := os.Getenv("BIND_ADDR")
-    if bindAddr == "" {
-        bindAddr = ":" + port
-    }
+	// Allow binding to a specific address (e.g., 127.0.0.1:8090) via env var.
+	// If BIND_ADDR is not set, use localhost in development and all interfaces in production.
+	bindAddr := strings.TrimSpace(os.Getenv("BIND_ADDR"))
+	if bindAddr == "" {
+		if appEnv == "production" {
+			bindAddr = ":" + port
+		} else {
+			bindAddr = "127.0.0.1:" + port
+		}
+	}
 
-    log.Printf("Server starting on %s", bindAddr)
-    log.Fatal(http.ListenAndServe(bindAddr, router))
+	log.Printf("APP_ENV=%s, server starting on %s", appEnv, bindAddr)
+	log.Fatal(http.ListenAndServe(bindAddr, router))
 }

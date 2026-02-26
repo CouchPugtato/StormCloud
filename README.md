@@ -132,7 +132,7 @@ Backend (Go)
 Mobile App (Expo/React Native)
 - `cd stormwatch`
 - `npm install`
-- Configure API base for the app via `EXPO_PUBLIC_API_BASE_URL`, e.g. `http://localhost:8080/api`.
+- Set `EXPO_PUBLIC_APP_ENV=development` for localhost, or `EXPO_PUBLIC_APP_ENV=production` for Pi/hosted.
 - Start:
   - Web: `npm run web`
   - Android: `npm run android`
@@ -219,11 +219,12 @@ Environment Variables (backend)
 
 | Name | Default | Description |
 |------|---------|-------------|
+| `APP_ENV` | `development` | Environment toggle: `development` or `production`. |
 | `DATABASE_PATH` | `./app.db` | SQLite database path. WAL mode enabled via migrations. |
 | `PORT` | `8080` | HTTP port. Ignored if `BIND_ADDR` is set. |
-| `BIND_ADDR` | `:${PORT}` | Bind address. Example: `127.0.0.1:8090`. |
+| `BIND_ADDR` | `127.0.0.1:${PORT}` in dev, `:${PORT}` in prod | Bind address. Override explicitly if needed. |
 | `API_BASE_PATH` | `/api` | Base path for API routes. |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:8082,http://localhost:3000,https://redstormcloud.com` | Comma-separated list. |
+| `CORS_ALLOWED_ORIGINS` | dev: `http://localhost:8082,http://localhost:3000`; prod: `https://redstormcloud.com` | Comma-separated list. |
 | `SYNC_CRON` | `0 */2 * * *` | Normal sync schedule (every 2 hours by default). |
 | `EVENT_SYNC_CRON` | `*/3 * * * *` | Event Mode schedule (every 3 minutes). |
 | `TBA_KEY` | — | TBA API key for ingestion. |
@@ -233,7 +234,18 @@ Environment Variables (backend)
 | `TWITCH_CHANNEL_URL` | — | Used by the mobile app to embed stream. |
 
 Environment Variables (mobile)
-- `EXPO_PUBLIC_API_BASE_URL` — API base URL the app should call (e.g., `http://localhost:8080/api`).
+- `EXPO_PUBLIC_APP_ENV` — `development` or `production`.
+- `EXPO_PUBLIC_API_BASE_URL` — optional explicit override for all environments.
+- `EXPO_PUBLIC_DEV_API_BASE_URL` — optional dev base URL (default: `http://localhost:8080/api`).
+- `EXPO_PUBLIC_PROD_API_BASE_URL` — optional production base URL (default native: `https://redstormcloud.com/api`; web uses `/api`).
+
+Recommended toggles
+- Local development:
+  - Backend: `APP_ENV=development`
+  - App: `EXPO_PUBLIC_APP_ENV=development`
+- Raspberry Pi / production:
+  - Backend: `APP_ENV=production`
+  - App: `EXPO_PUBLIC_APP_ENV=production`
 
 Events Config (`stormcloud/events_config.json`)
 ```json
@@ -266,7 +278,7 @@ Events Config (`stormcloud/events_config.json`)
 
 ## Troubleshooting / FAQ
 - CORS blocked: set `CORS_ALLOWED_ORIGINS` to include your app origin; restart the server.
-- App can’t reach API: ensure `EXPO_PUBLIC_API_BASE_URL` matches server bind address and base path.
+- App can’t reach API: ensure `EXPO_PUBLIC_APP_ENV` is correct and any override URL matches server bind address and base path.
 - TBA ingestion fails: verify `TBA_KEY` and network egress; respect rate limits.
 - EPA missing: confirm events and year configured; verify Statbotics access.
 - Port conflicts: set `BIND_ADDR` to a free host/port (e.g., `127.0.0.1:8090`).
