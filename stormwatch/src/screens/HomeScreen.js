@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../contexts/ThemeContext';
@@ -27,7 +26,7 @@ const { width, height } = Dimensions.get('window');
 const isMobile = height > width; // mobile devices have height > width
 
 export default function HomeScreen({ navigation }) {
-  const { theme, isDarkMode } = useTheme();
+  const { theme } = useTheme();
   const { user } = useAuth();
   const { isEventMode } = useEventMode();
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -426,15 +425,12 @@ export default function HomeScreen({ navigation }) {
 
   const renderHeader = () => (
     <View>
-      <LinearGradient
-        colors={isDarkMode ? [theme.colors.primary, '#FF6B6B'] : ['#2196F3', '#1976D2']}
-        style={styles.header}
-      >
+      <View style={[styles.header, { backgroundColor: theme.colors.primary }]}>
         <Text style={styles.headerTitle}>StormCloud</Text>
         <Text style={styles.headerSubtitle}>
           FRC Scouting & Match Analysis Platform by Team 509
         </Text>
-      </LinearGradient>
+      </View>
       
       {isEventMode && <TwitchStream />}
       
@@ -525,7 +521,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   header: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
     paddingBottom: 30,
     alignItems: 'center',
     marginBottom: 20,

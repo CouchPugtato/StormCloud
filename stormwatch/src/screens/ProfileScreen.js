@@ -10,14 +10,13 @@ import {
   Alert,
   FlatList,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { platformUtils } from '../utils/platformUtils';
 
 export default function ProfileScreen() {
-  const { theme, isDarkMode } = useTheme();
+  const { theme } = useTheme();
   const { user, users, createAccount, signIn, signOut, getLeaderboard } = useAuth();
   const [activeTab, setActiveTab] = useState('leaderboard');
   const [authMode, setAuthMode] = useState('signin'); // 'signin' or 'signup'
@@ -652,7 +651,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingTop: platformUtils.getStatusBarHeight() + 10,
+    paddingTop: platformUtils.getStatusBarHeight() + 20,
     paddingBottom: 30,
     paddingHorizontal: 20,
     alignItems: 'center',
@@ -915,8 +914,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: platformUtils.getStatusBarHeight() + 10,
-    paddingBottom: 15,
+    paddingTop: platformUtils.getStatusBarHeight() + 20,
+    paddingBottom: 30,
     paddingHorizontal: 20,
     ...platformUtils.getPlatformElevation(2),
   },

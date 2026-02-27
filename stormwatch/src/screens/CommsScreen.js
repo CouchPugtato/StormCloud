@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useMessaging } from '../contexts/MessagingContext';
@@ -19,7 +18,7 @@ import MessageInput from '../components/MessageInput';
 import NotificationSettings from '../components/NotificationSettings';
 
 export default function CommsScreen({ navigation }) {
-  const { theme, isDarkMode } = useTheme();
+  const { theme } = useTheme();
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   
   useRealtimeMessaging(true);
@@ -33,10 +32,7 @@ export default function CommsScreen({ navigation }) {
       <StatusBar style={theme.colors.statusBar} />
       
       {/* Header */}
-      <LinearGradient
-        colors={isDarkMode ? [theme.colors.primary, '#FF6B6B'] : ['#2196F3', '#1976D2']}
-        style={styles.header}
-      >
+      <View style={[styles.header, { backgroundColor: theme.colors.primary }]}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
             <Text style={styles.headerTitle}>Communications</Text>
@@ -50,7 +46,7 @@ export default function CommsScreen({ navigation }) {
             <Ionicons name="notifications-outline" size={24} color="white" />
           </TouchableOpacity>
         </View>
-      </LinearGradient>
+      </View>
       
       {/* Channel Dropdown */}
       <ChannelDropdown />
@@ -75,8 +71,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingTop: 20,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
+    paddingBottom: 30,
     paddingHorizontal: 16,
   },
   headerContent: {

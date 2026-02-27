@@ -9,9 +9,9 @@ import {
   Dimensions,
   Image,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import apiService from '../utils/apiService';
@@ -20,7 +20,7 @@ import PerformanceGraphs from '../components/PerformanceGraphs';
 const { width } = Dimensions.get('window');
 
 export default function TeamDetailScreen({ navigation, route }) {
-  const { theme, isDarkMode } = useTheme();
+  const { theme } = useTheme();
   const { team } = route.params || {};
   
   const [teamData, setTeamData] = useState(team || null);
@@ -240,10 +240,7 @@ export default function TeamDetailScreen({ navigation, route }) {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={isDarkMode ? [theme.colors.primary, '#FF6B6B'] : ['#2196F3', '#1976D2']}
-          style={styles.header}
-        >
+        <View style={[styles.header, { backgroundColor: theme.colors.primary }]}>
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => navigation.goBack()}
@@ -254,7 +251,7 @@ export default function TeamDetailScreen({ navigation, route }) {
           <Text style={styles.headerSubtitle}>
             {teamName}
           </Text>
-        </LinearGradient>
+        </View>
         <View style={[styles.summarySection, { backgroundColor: theme.colors.surface }]}>
           <View style={styles.teamHeader}>
             <View style={[styles.teamIcon, { backgroundColor: theme.colors.primary }]}>
@@ -807,7 +804,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
     paddingBottom: 30,
     paddingHorizontal: 20,
     alignItems: 'center',
@@ -817,7 +814,7 @@ const styles = StyleSheet.create({
   backButton: {
     position: 'absolute',
     left: 20,
-    top: 60,
+    top: Platform.OS === 'ios' ? 40 : 20,
     padding: 8,
   },
   headerTitle: {

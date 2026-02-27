@@ -10,15 +10,15 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import apiService from '../utils/apiService';
 
 export default function PickListScreen({ navigation }) {
-  const { theme, isDarkMode } = useTheme();
+  const { theme } = useTheme();
   const [pickList, setPickList] = useState([]);
   const [teamNotes, setTeamNotes] = useState({});
   const [unsavedNotes, setUnsavedNotes] = useState({});
@@ -228,13 +228,10 @@ export default function PickListScreen({ navigation }) {
   };
 
   const renderHeader = () => (
-    <LinearGradient
-      colors={isDarkMode ? [theme.colors.primary, '#FF6B6B'] : ['#2196F3', '#1976D2']}
-      style={styles.header}
-    >
+    <View style={[styles.header, { backgroundColor: theme.colors.primary }]}>
       <Text style={styles.headerTitle}>Pick List</Text>
       <Text style={styles.headerSubtitle}>
-        Strategic Team Selection & Rankings
+        {pickList.length} teams being considered
       </Text>
       <TouchableOpacity
         style={styles.addButton}
@@ -243,7 +240,7 @@ export default function PickListScreen({ navigation }) {
         <Ionicons name="add" size={24} color="white" />
         <Text style={styles.addButtonText}>Add Teams</Text>
       </TouchableOpacity>
-    </LinearGradient>
+    </View>
   );
 
   const renderPickListItem = ({ item: team, index }) => {
@@ -479,8 +476,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingTop: 20,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
+    paddingBottom: 30,
     paddingHorizontal: 20,
     marginBottom: 20,
     position: 'relative',
@@ -489,17 +486,17 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: 'white',
-    textAlign: 'center',
+    textAlign: 'left',
   },
   headerSubtitle: {
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
+    textAlign: 'left',
     marginTop: 8,
   },
   addButton: {
     position: 'absolute',
-    top: 20,
+    top: Platform.OS === 'ios' ? 40 : 20,
     right: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -622,7 +619,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },

@@ -11,7 +11,6 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { globalStyles } from '../styles/globalStyles';
 import { platformUtils } from '../utils/platformUtils';
@@ -130,7 +129,7 @@ const getAllEvents = () => {
 };
 
 export default function TeamsScreen({ navigation }) {
-  const { theme, isDarkMode } = useTheme();
+  const { theme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEvent, setSelectedEvent] = useState('All Events');
   const [showFilters, setShowFilters] = useState(false);
@@ -257,15 +256,12 @@ export default function TeamsScreen({ navigation }) {
         barStyle={theme.colors.statusBar} 
       />
       
-      <LinearGradient
-        colors={isDarkMode ? [theme.colors.primary, '#FF6B6B'] : ['#2196F3', '#1976D2']}
-        style={styles.header}
-      >
+      <View style={[styles.header, { backgroundColor: theme.colors.primary }]}>
         <Text style={styles.headerTitle}>Teams</Text>
         <Text style={styles.headerSubtitle}>
           {filteredTeams?.length || 0} teams found
         </Text>
-      </LinearGradient>
+      </View>
 
       <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface }]}>
         <View style={[styles.searchInputContainer, { backgroundColor: theme.colors.background }]}>

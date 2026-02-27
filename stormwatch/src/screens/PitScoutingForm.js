@@ -8,6 +8,7 @@ import {
   Switch,
   Alert,
   StyleSheet,
+  Platform,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -338,7 +339,9 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#2196F3',
-    padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
     alignItems: 'center',
   },
   title: {
