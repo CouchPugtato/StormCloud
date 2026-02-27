@@ -74,10 +74,72 @@ export default function HomeScreen({ navigation }) {
       try {
         setMatchesLoading(true);
         const matchesData = await apiService.getEventMatches(selectedEvent);
+
+        const getCompLevelRank = (level) => {
+          switch ((level || '').toLowerCase()) {
+            case 'qm':
+              return 1;
+            case 'ef':
+              return 2;
+            case 'qf':
+              return 3;
+            case 'sf':
+              return 4;
+            case 'f':
+              return 99; // force finals to bottom
+            default:
+              return 50;
+          }
+        };
+
+        const getMatchDisplayLabel = (match) => {
+          const level = (match.comp_level || '').toLowerCase();
+          const setNum = Number(match.set_number || 0);
+          const matchNum = Number(match.match_number || 0);
+
+          if (level === 'qm') {
+            return `Quals ${matchNum}`;
+          }
+          if (level === 'sf') {
+            return `Semis ${setNum}`;
+          }
+          if (level === 'qf') {
+            return `QF${setNum}`;
+          }
+          if (level === 'f') {
+            return `Finals ${matchNum}`;
+          }
+          if (level === 'ef') {
+            return `EF${setNum}`;
+          }
+          return `${(match.comp_level || '').toUpperCase()} ${matchNum}`;
+        };
+
+        const getSortTime = (m) => Number(m.time_real || m.time_pred || 0);
+
+        const sortedMatches = [...matchesData].sort((a, b) => {
+          const rankA = getCompLevelRank(a.comp_level);
+          const rankB = getCompLevelRank(b.comp_level);
+          if (rankA !== rankB) return rankA - rankB;
+
+          const timeA = getSortTime(a);
+          const timeB = getSortTime(b);
+          if (timeA !== 0 && timeB !== 0 && timeA !== timeB) {
+            return timeA - timeB;
+          }
+
+          const setA = Number(a.set_number || 0);
+          const setB = Number(b.set_number || 0);
+          if (setA !== setB) return setA - setB;
+
+          const matchA = Number(a.match_number || 0);
+          const matchB = Number(b.match_number || 0);
+          return matchA - matchB;
+        });
         
-        const transformedMatches = matchesData.map((match, index) => ({
+        const transformedMatches = sortedMatches.map((match, index) => ({
           id: index + 1,
-          matchNumber: `${match.comp_level === 'qm' ? 'Quals' : match.comp_level.toUpperCase()} ${match.match_number}`,
+          matchNumber: getMatchDisplayLabel(match),
           matchKey: match.match_key,
           redAlliance: match.red_teams.map(team => parseInt(team.replace('frc', ''))),
           blueAlliance: match.blue_teams.map(team => parseInt(team.replace('frc', ''))),

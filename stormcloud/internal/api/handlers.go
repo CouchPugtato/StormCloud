@@ -124,7 +124,19 @@ func TeamSchedule(db *sql.DB) http.HandlerFunc {
 
 		rows, err := db.Query(`
 			SELECT match_key, time_real, time_pred, blue_teams, red_teams, blue_score, red_score
-			FROM matches WHERE event_key=? ORDER BY comp_level, set_number, match_number
+			FROM matches
+			WHERE event_key=?
+			ORDER BY
+				CASE comp_level
+					WHEN 'qm' THEN 1
+					WHEN 'ef' THEN 2
+					WHEN 'qf' THEN 3
+					WHEN 'sf' THEN 4
+					WHEN 'f' THEN 5
+					ELSE 6
+				END,
+				set_number,
+				match_number
 		`, eventKey)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -384,8 +396,19 @@ func EventMatches(db *sql.DB) http.HandlerFunc {
 		rows, err := db.Query(`
 			SELECT match_key, comp_level, set_number, match_number, 
 			       time_real, time_pred, blue_teams, red_teams, blue_score, red_score 
-			FROM matches WHERE event_key=? 
-			ORDER BY comp_level, set_number, match_number
+			FROM matches
+			WHERE event_key=?
+			ORDER BY
+				CASE comp_level
+					WHEN 'qm' THEN 1
+					WHEN 'ef' THEN 2
+					WHEN 'qf' THEN 3
+					WHEN 'sf' THEN 4
+					WHEN 'f' THEN 5
+					ELSE 6
+				END,
+				set_number,
+				match_number
 		`, eventKey)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
