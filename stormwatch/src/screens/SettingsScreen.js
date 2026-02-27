@@ -22,7 +22,6 @@ export default function SettingsScreen() {
   
   const [settings, setSettings] = useState({
     notifications: true,
-    autoUpdate: true,
   });
 
   const [twitchUrl, setTwitchUrl] = useState('');
@@ -123,14 +122,6 @@ export default function SettingsScreen() {
           },
         },
         {
-          key: 'autoUpdate',
-          title: 'Auto Update',
-          subtitle: 'Automatically update the app',
-          icon: 'refresh-circle',
-          type: 'toggle',
-          value: settings.autoUpdate,
-        },
-        {
           key: 'eventMode',
           title: 'Event Mode',
           subtitle: isEventMode ? 'Server updates every 3 minutes' : 'Normal update schedule (every 2 hours)',
@@ -138,55 +129,6 @@ export default function SettingsScreen() {
           type: 'toggle',
           value: isEventMode,
           onToggle: toggleEventMode,
-        },
-      ],
-    },
-    {
-      title: 'About',
-      items: [
-        {
-          key: 'version',
-          title: 'App Version',
-          subtitle: '1.0.0 (Demo)',
-          icon: 'information-circle',
-          type: 'info',
-          onPress: () => showInfo(
-            'App Version',
-            'StormCloud v1.0.0\n\nThis is a React Native cross-platform demo application showcasing modern mobile development practices.'
-          ),
-        },
-        {
-          key: 'platform',
-          title: 'Platform Info',
-          subtitle: `Running on ${Platform.OS.charAt(0).toUpperCase() + Platform.OS.slice(1)}`,
-          icon: 'phone-portrait',
-          type: 'info',
-          onPress: () => showInfo(
-            'Platform Information',
-            `Platform: ${Platform.OS}\nVersion: ${Platform.Version}\n\nThis app runs natively on iOS and Android, and as a web application in browsers.`
-          ),
-        },
-        {
-          key: 'help',
-          title: 'Help & Support',
-          subtitle: 'Get help and contact support',
-          icon: 'help-circle',
-          type: 'info',
-          onPress: () => showInfo(
-            'Help & Support',
-            'For help with this demo app:\n\n• Check the README file\n• Review the source code\n• Visit the React Native documentation\n\nThis is a demonstration app for educational purposes.'
-          ),
-        },
-        {
-          key: 'privacy',
-          title: 'Privacy Policy',
-          subtitle: 'View our privacy policy',
-          icon: 'shield-checkmark',
-          type: 'info',
-          onPress: () => showInfo(
-            'Privacy Policy',
-            'This is a demo application.\n\nNo personal data is collected or transmitted. All settings and preferences are stored locally on your device.'
-          ),
         },
       ],
     },
