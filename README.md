@@ -232,12 +232,29 @@ Environment Variables (backend)
 | `CURRENT_YEAR` | `2025` | Year for team/event syncing and EPA selection. |
 | `ACCESS_PASSWORD` | — | Password for `POST /api/auth`. |
 | `TWITCH_CHANNEL_URL` | — | Used by the mobile app to embed stream. |
+| `VAPID_PUBLIC_KEY` | — | Web Push VAPID public key (base64url). |
+| `VAPID_PRIVATE_KEY` | — | Web Push VAPID private key (base64url, 32-byte scalar). |
+| `VAPID_SUBJECT` | `mailto:stormcloud@example.com` | Contact subject for VAPID JWT. |
 
 Environment Variables (mobile)
 - `EXPO_PUBLIC_APP_ENV` — `development` or `production`.
 - `EXPO_PUBLIC_API_BASE_URL` — optional explicit override for all environments.
 - `EXPO_PUBLIC_DEV_API_BASE_URL` — optional dev base URL (default: `http://localhost:8080/api`).
 - `EXPO_PUBLIC_PROD_API_BASE_URL` — optional production base URL (default native: `https://redstormcloud.com/api`; web uses `/api`).
+
+Push Notification Endpoints
+- `GET /api/push/public-key` — returns VAPID public key for web subscription.
+- `POST /api/push/subscribe-web` — register/update a web push subscription.
+- `POST /api/push/unsubscribe-web` — remove a web push subscription.
+- `POST /api/push/test` — send test notifications to a user’s web/mobile registrations.
+- `POST /api/devices` — register native Expo push token (`ios`/`android`).
+
+Web + iPhone PWA Setup
+1. Set backend env vars: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
+2. Ensure your site is served over HTTPS.
+3. On iPhone, open in Safari and install to home screen (`Share` -> `Add to Home Screen`).
+4. Open app Settings and enable Push Notifications, then use `Send Test Notification`.
+5. On Android and desktop browsers, enable push similarly from app Settings.
 
 Recommended toggles
 - Local development:

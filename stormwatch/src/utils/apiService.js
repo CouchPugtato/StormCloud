@@ -170,6 +170,45 @@ class ApiService {
       body: JSON.stringify({ event_key: eventKey || '', items }),
     });
   }
+
+  async registerDeviceToken(payload) {
+    return this.request('/devices', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async unregisterDeviceToken(payload) {
+    return this.request('/devices/unregister', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getPushPublicKey() {
+    return this.request('/push/public-key');
+  }
+
+  async subscribeWebPush(payload) {
+    return this.request('/push/subscribe-web', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async unsubscribeWebPush(payload) {
+    return this.request('/push/unsubscribe-web', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async sendTestPush(payload) {
+    return this.request('/push/test', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
 }
 
 const apiService = new ApiService();

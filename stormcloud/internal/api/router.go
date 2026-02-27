@@ -95,6 +95,11 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Post("/notes", NotesCreate(db))
 
 		r.Post("/devices", DeviceRegister(db))
+		r.Post("/devices/unregister", DeviceUnregister(db))
+		r.Get("/push/public-key", PushPublicKey())
+		r.Post("/push/subscribe-web", WebPushSubscribe(db))
+		r.Post("/push/unsubscribe-web", WebPushUnsubscribe(db))
+		r.Post("/push/test", PushTest(db))
 
 		r.Post("/auth", AuthenticatePassword())
 		r.Get("/app-settings", AppSettingsGet())

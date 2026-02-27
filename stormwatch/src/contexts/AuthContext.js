@@ -2,6 +2,34 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AuthContext = createContext();
+export const USER_ROLES = {
+  SCOUTER: 'scouter',
+  SCOUTING_LEAD: 'scouting_lead',
+  DRIVE_TEAM: 'drive_team',
+};
+const VALID_ROLES = new Set(Object.values(USER_ROLES));
+const DEFAULT_USER_ROLE = USER_ROLES.SCOUTER;
+
+const normalizeUser = (rawUser) => {
+  if (!rawUser) {
+    return rawUser;
+  }
+
+  return {
+    ...rawUser,
+    role: VALID_ROLES.has(rawUser.role) ? rawUser.role : DEFAULT_USER_ROLE,
+    stats: {
+      totalMatches: 0,
+      eventMatches: {},
+      seasonMatches: 0,
+      allTimeMatches: 0,
+      ...(rawUser.stats || {}),
+      eventMatches: {
+        ...((rawUser.stats && rawUser.stats.eventMatches) || {}),
+      },
+    },
+  };
+};
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -28,6 +56,7 @@ export const AuthProvider = ({ children }) => {
             id: 'mock1',
             name: 'Alex Chen',
             password: 'demo123',
+            role: DEFAULT_USER_ROLE,
             teamNumber: 1234,
             createdAt: '2024-01-15T10:00:00.000Z',
             stats: {
@@ -46,6 +75,7 @@ export const AuthProvider = ({ children }) => {
             id: 'mock2',
             name: 'Jordan Smith',
             password: 'demo123',
+            role: DEFAULT_USER_ROLE,
             teamNumber: 5678,
             createdAt: '2024-01-20T14:30:00.000Z',
             stats: {
@@ -64,6 +94,7 @@ export const AuthProvider = ({ children }) => {
             id: 'mock3',
             name: 'Taylor Johnson',
             password: 'demo123',
+            role: DEFAULT_USER_ROLE,
             teamNumber: 9012,
             createdAt: '2024-02-01T09:15:00.000Z',
             stats: {
@@ -82,6 +113,7 @@ export const AuthProvider = ({ children }) => {
             id: 'mock4',
             name: 'Casey Williams',
             password: 'demo123',
+            role: DEFAULT_USER_ROLE,
             teamNumber: 3456,
             createdAt: '2024-01-10T16:45:00.000Z',
             stats: {
@@ -100,6 +132,7 @@ export const AuthProvider = ({ children }) => {
             id: 'mock5',
             name: 'Morgan Davis',
             password: 'demo123',
+            role: DEFAULT_USER_ROLE,
             teamNumber: 7890,
             createdAt: '2024-01-25T11:20:00.000Z',
             stats: {
@@ -118,6 +151,7 @@ export const AuthProvider = ({ children }) => {
             id: 'mock6',
             name: 'Riley Thompson',
             password: 'demo123',
+            role: DEFAULT_USER_ROLE,
             teamNumber: 1357,
             createdAt: '2024-02-05T13:30:00.000Z',
             stats: {
@@ -136,6 +170,7 @@ export const AuthProvider = ({ children }) => {
             id: 'mock7',
             name: 'Sam Rodriguez',
             password: 'demo123',
+            role: DEFAULT_USER_ROLE,
             teamNumber: 2468,
             createdAt: '2024-01-28T08:45:00.000Z',
             stats: {
@@ -154,6 +189,7 @@ export const AuthProvider = ({ children }) => {
             id: 'mock8',
             name: 'Avery Kim',
             password: 'demo123',
+            role: DEFAULT_USER_ROLE,
             teamNumber: 8642,
             createdAt: '2024-02-10T15:20:00.000Z',
             stats: {
@@ -181,13 +217,25 @@ export const AuthProvider = ({ children }) => {
     try {
       const storedUsers = await AsyncStorage.getItem('stormwatch_users');
       const currentUser = await AsyncStorage.getItem('stormwatch_current_user');
+      let normalizedUsers = [];
       
       if (storedUsers) {
-        setUsers(JSON.parse(storedUsers));
+        const parsedUsers = JSON.parse(storedUsers);
+        normalizedUsers = parsedUsers.map(normalizeUser);
+        setUsers(normalizedUsers);
+        if (JSON.stringify(parsedUsers) !== JSON.stringify(normalizedUsers)) {
+          await AsyncStorage.setItem('stormwatch_users', JSON.stringify(normalizedUsers));
+        }
       }
       
       if (currentUser) {
-        setUser(JSON.parse(currentUser));
+        const parsedCurrentUser = JSON.parse(currentUser);
+        const normalizedCurrentUser = normalizeUser(parsedCurrentUser);
+        const syncedCurrentUser = normalizedUsers.find((u) => u.id === normalizedCurrentUser.id) || normalizedCurrentUser;
+        setUser(syncedCurrentUser);
+        if (JSON.stringify(parsedCurrentUser) !== JSON.stringify(syncedCurrentUser)) {
+          await AsyncStorage.setItem('stormwatch_current_user', JSON.stringify(syncedCurrentUser));
+        }
       }
     } catch (error) {
       console.error('Error loading stored data:', error);
@@ -236,6 +284,7 @@ export const AuthProvider = ({ children }) => {
       id: Date.now().toString(),
       name: name.trim(),
       password,
+      role: DEFAULT_USER_ROLE,
       createdAt: new Date().toISOString(),
       stats: {
         totalMatches: 0,
@@ -268,6 +317,21 @@ export const AuthProvider = ({ children }) => {
 
     await saveCurrentUser(existingUser);
     return existingUser;
+  };
+
+  const updateUserRole = async (role) => {
+    if (!user || !VALID_ROLES.has(role)) {
+      return;
+    }
+
+    const updatedUser = {
+      ...user,
+      role,
+    };
+
+    const updatedUsers = users.map((u) => (u.id === user.id ? updatedUser : u));
+    await saveUsers(updatedUsers);
+    await saveCurrentUser(updatedUser);
   };
 
   const signOut = async () => {
@@ -349,6 +413,7 @@ export const AuthProvider = ({ children }) => {
     createAccount,
     signIn,
     signOut,
+    updateUserRole,
     updateUserStats,
     getLeaderboard
   };
@@ -359,3 +424,4 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
+

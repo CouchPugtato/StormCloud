@@ -1089,3 +1089,38 @@ func DeviceRegister(db *sql.DB) http.HandlerFunc {
 		writeJSON(w, 200, map[string]any{"ok": true})
 	}
 }
+
+func DeviceUnregister(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ UserID, Platform, Token string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+		if strings.TrimSpace(in.UserID) == "" {
+			writeJSON(w, 400, map[string]string{"error": "user_id required"})
+			return
+		}
+		if strings.TrimSpace(in.Token) != "" {
+			_, err := db.Exec(`DELETE FROM device_tokens WHERE user_id=? AND token=?`, strings.TrimSpace(in.UserID), strings.TrimSpace(in.Token))
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		} else if strings.TrimSpace(in.Platform) != "" {
+			_, err := db.Exec(`DELETE FROM device_tokens WHERE user_id=? AND platform=?`, strings.TrimSpace(in.UserID), strings.TrimSpace(in.Platform))
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		} else {
+			_, err := db.Exec(`DELETE FROM device_tokens WHERE user_id=?`, strings.TrimSpace(in.UserID))
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true})
+	}
+}

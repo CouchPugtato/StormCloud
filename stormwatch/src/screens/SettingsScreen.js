@@ -14,15 +14,21 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useEventMode } from '../contexts/EventModeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { getApiBaseURL } from '../utils/config';
+import { registerForPushNotifications, unregisterNativePush, unregisterWebPush } from '../utils/pushNotifications';
+import apiService from '../utils/apiService';
 
 export default function SettingsScreen() {
   const { theme, isDarkMode, themePreference, toggleTheme, setSystemTheme } = useTheme();
   const { isEventMode, toggleEventMode } = useEventMode();
+  const { user } = useAuth();
   
   const [settings, setSettings] = useState({
-    notifications: true,
+    notifications: false,
   });
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushStatusText, setPushStatusText] = useState('Push notifications are enabled for this device.');
 
   const [twitchUrl, setTwitchUrl] = useState('');
   const [isEditingTwitch, setIsEditingTwitch] = useState(false);
@@ -46,6 +52,61 @@ export default function SettingsScreen() {
       ...prev,
       [key]: !prev[key]
     }));
+  };
+
+  const getPushUserID = () => {
+    return user?.id || 'anonymous';
+  };
+
+  const togglePushNotifications = async () => {
+    if (pushBusy) {
+      return;
+    }
+    const nextEnabled = !settings.notifications;
+    setPushBusy(true);
+    try {
+      if (nextEnabled) {
+        const result = await registerForPushNotifications(getPushUserID());
+        if (!result.ok) {
+          showInfo('Push Notifications', result.error || 'Unable to enable push notifications.');
+          return;
+        }
+        setPushStatusText('Push notifications are enabled for this device.');
+      } else {
+        if (Platform.OS === 'web') {
+          await unregisterWebPush(getPushUserID());
+        } else {
+          await unregisterNativePush(getPushUserID());
+        }
+        setPushStatusText('Push notifications are disabled for this browser/device session.');
+      }
+      setSettings(prev => ({ ...prev, notifications: nextEnabled }));
+    } catch (error) {
+      console.error('Push toggle failed:', error);
+      showInfo('Push Notifications', 'Unable to update push notification settings.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const sendTestNotification = async () => {
+    try {
+      const payload = {
+        user_id: getPushUserID(),
+        title: 'StormCloud Test',
+        body: 'Push notifications are working.',
+        url: '/',
+      };
+      const result = await apiService.sendTestPush(payload);
+      if (result.ok) {
+        showInfo('Test Notification', `Sent. Web: ${result.web_sent}, Mobile: ${result.expo_sent}`);
+      } else {
+        showInfo('Test Notification', `Partially failed. Web error: ${result.web_error || 'none'}, Mobile error: ${result.expo_error || 'none'}`);
+      }
+    } catch (error) {
+      console.error('Failed to send test notification:', error);
+      showInfo('Test Notification', 'Failed to send test notification.');
+    }
   };
 
   const showInfo = (title, message) => {
@@ -92,10 +153,20 @@ export default function SettingsScreen() {
         {
           key: 'notifications',
           title: 'Push Notifications',
-          subtitle: 'Receive updates and alerts',
+          subtitle: pushStatusText,
           icon: 'notifications',
           type: 'toggle',
           value: settings.notifications,
+          onToggle: togglePushNotifications,
+        },
+        {
+          key: 'pushTest',
+          title: 'Send Test Notification',
+          subtitle: 'Send a test to this user on web and mobile tokens',
+          icon: 'paper-plane',
+          type: 'info',
+          onPress: sendTestNotification,
+          disabled: pushBusy,
         },
         {
           key: 'darkMode',

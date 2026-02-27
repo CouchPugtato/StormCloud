@@ -12,12 +12,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 import { platformUtils } from '../utils/platformUtils';
 
 export default function ProfileScreen() {
   const { theme } = useTheme();
-  const { user, users, createAccount, signIn, signOut, getLeaderboard } = useAuth();
+  const { user, users, createAccount, signIn, signOut, getLeaderboard, updateUserRole } = useAuth();
   const [activeTab, setActiveTab] = useState('leaderboard');
   const [authMode, setAuthMode] = useState('signin'); // 'signin' or 'signup'
   const [formData, setFormData] = useState({ name: '', password: '' });
@@ -26,6 +26,13 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const roleOptions = [
+    { key: USER_ROLES.SCOUTER, label: 'Scouter' },
+    { key: USER_ROLES.SCOUTING_LEAD, label: 'Scouting Lead' },
+    { key: USER_ROLES.DRIVE_TEAM, label: 'Drive Team' },
+  ];
+  const currentRole = user?.role || USER_ROLES.SCOUTER;
 
   const upcomingMatches = [
     {
@@ -273,6 +280,33 @@ export default function ProfileScreen() {
         <Text style={[styles.profileJoinDate, { color: theme.colors.textSecondary }]}>
           Joined {new Date(user.createdAt).toLocaleDateString()}
         </Text>
+      </View>
+
+      <View style={[styles.roleSection, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.roleSectionTitle, { color: theme.colors.text }]}>Role</Text>
+        <View style={styles.roleButtonRow}>
+          {roleOptions.map((option) => (
+            <TouchableOpacity
+              key={option.key}
+              style={[
+                styles.roleButton,
+                { borderColor: theme.colors.border },
+                currentRole === option.key && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }
+              ]}
+              onPress={() => updateUserRole(option.key)}
+            >
+              <Text
+                style={[
+                  styles.roleButtonText,
+                  { color: theme.colors.text },
+                  currentRole === option.key && { color: 'white' }
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       <View style={styles.statsContainer}>
@@ -788,6 +822,33 @@ const styles = StyleSheet.create({
   },
   profileJoinDate: {
     fontSize: 16,
+  },
+  roleSection: {
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+    ...platformUtils.getPlatformElevation(1),
+  },
+  roleSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  roleButtonRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  roleButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  roleButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   statsContainer: {
     flexDirection: 'row',

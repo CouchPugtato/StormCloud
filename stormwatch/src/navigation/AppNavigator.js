@@ -83,9 +83,9 @@ function TabNavigator() {
             iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
           } */ else if (route.name === 'PickList') {
             iconName = focused ? 'list' : 'list-outline';
-          } /* else if (route.name === 'Profile') {
+          } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
-          } */ else if (route.name === 'Settings') {
+          } else if (route.name === 'Settings') {
             iconName = focused ? 'settings' : 'settings-outline';
           }
 
@@ -105,7 +105,7 @@ function TabNavigator() {
       <Tab.Screen name="Teams" component={TeamsStack} />
       {/* <Tab.Screen name="Comms" component={CommsScreen} /> */}
       <Tab.Screen name="PickList" component={PickListScreen} options={{ title: 'Pick List' }} />
-      {/* <Tab.Screen name="Profile" component={ProfileScreen} /> */}
+      <Tab.Screen name="Profile" component={ProfileScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
