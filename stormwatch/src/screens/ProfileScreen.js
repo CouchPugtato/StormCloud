@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Platform,
   Alert,
   FlatList,
 } from 'react-native';
@@ -17,15 +16,14 @@ import { platformUtils } from '../utils/platformUtils';
 
 export default function ProfileScreen() {
   const { theme } = useTheme();
-  const { user, users, createAccount, signIn, signOut, getLeaderboard, updateUserRole } = useAuth();
+  const { user, signIn, signOut, getLeaderboard, startPasswordReset, completePasswordReset } = useAuth();
   const [activeTab, setActiveTab] = useState('leaderboard');
-  const [authMode, setAuthMode] = useState('signin'); // 'signin' or 'signup'
-  const [formData, setFormData] = useState({ name: '', password: '' });
+  const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'forgot_request' | 'forgot_confirm'
+  const [formData, setFormData] = useState({ email: '', password: '', resetCode: '', newPassword: '' });
   const [leaderboardType, setLeaderboardType] = useState('event');
   const [selectedEvent, setSelectedEvent] = useState('2024week1');
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const roleOptions = [
     { key: USER_ROLES.SCOUTER, label: 'Scouter' },
@@ -81,39 +79,39 @@ export default function ProfileScreen() {
   }, [getLeaderboard, leaderboardType, selectedEvent]);
 
   const handleAuth = async () => {
-    if (!formData.name.trim()) {
-      Alert.alert('Error', 'Please enter your name');
+    if (!formData.email.trim()) {
+      Alert.alert('Error', 'Please enter your email');
       return;
     }
-    
-    if (formData.name.trim().length < 2) {
-      Alert.alert('Error', 'Name must be at least 2 characters long');
+
+    if (authMode === 'signin' && !formData.password.trim()) {
+      Alert.alert('Error', 'Please enter your password');
       return;
     }
-    
-    if (!formData.password.trim()) {
-      Alert.alert('Error', 'Please enter a password');
-      return;
-    }
-    
-    if (authMode === 'signup' && formData.password.length < 4) {
-      Alert.alert('Error', 'Password must be at least 4 characters long');
+
+    if (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) {
+      Alert.alert('Error', 'Please enter your reset code and new password');
       return;
     }
 
     setLoading(true);
     try {
-      if (authMode === 'signup') {
-        await createAccount(formData.name.trim(), formData.password);
-        Alert.alert('Success', 'Account created successfully!');
-      } else {
-        await signIn(formData.name.trim(), formData.password);
+      if (authMode === 'signin') {
+        await signIn(formData.email.trim(), formData.password);
         Alert.alert('Success', 'Signed in successfully!');
+        setShowAuthModal(false);
+      } else if (authMode === 'forgot_request') {
+        await startPasswordReset(formData.email.trim());
+        Alert.alert('Reset Code Sent', 'Check your email for a password reset code.');
+        setAuthMode('forgot_confirm');
+      } else if (authMode === 'forgot_confirm') {
+        await completePasswordReset(formData.resetCode.trim(), formData.newPassword);
+        Alert.alert('Success', 'Password reset complete. You are now signed in.');
+        setShowAuthModal(false);
       }
-      setFormData({ name: '', password: '' });
-      setShowAuthModal(false);
+      setFormData({ email: '', password: '', resetCode: '', newPassword: '' });
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', error?.errors?.[0]?.longMessage || error.message);
     } finally {
       setLoading(false);
     }
@@ -134,139 +132,148 @@ export default function ProfileScreen() {
     <View style={styles.authContainer}>
       <View style={styles.authHeader}>
         <Text style={[styles.authTitle, { color: theme.colors.text }]}>
-          {authMode === 'signin' ? 'Sign In' : 'Create Account'}
+          {authMode === 'signin' && 'Sign In'}
+          {authMode === 'forgot_request' && 'Reset Password'}
+          {authMode === 'forgot_confirm' && 'Enter Reset Code'}
         </Text>
         <Text style={[styles.authSubtitle, { color: theme.colors.textSecondary }]}>
-          {authMode === 'signin' 
-            ? 'Enter your credentials to access your profile'
-            : 'Create a new scouting profile'
-          }
+          {authMode === 'signin' && 'Sign in with your Clerk account'}
+          {authMode === 'forgot_request' && 'We will email a reset code to your account'}
+          {authMode === 'forgot_confirm' && 'Enter the code and choose a new password'}
         </Text>
       </View>
 
       <View style={styles.formContainer}>
         <View style={styles.inputContainer}>
-          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Name</Text>
+          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Email</Text>
           <TextInput
             style={[styles.input, { 
               backgroundColor: theme.colors.surface,
               borderColor: theme.colors.border,
               color: theme.colors.text
             }]}
-            value={formData.name}
-            onChangeText={(text) => setFormData({ ...formData, name: text })}
-            placeholder="Enter your name"
+            value={formData.email}
+            onChangeText={(text) => setFormData({ ...formData, email: text })}
+            placeholder="you@example.com"
             placeholderTextColor={theme.colors.textSecondary}
-            autoCapitalize="words"
+            autoCapitalize="none"
+            keyboardType="email-address"
           />
         </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Password</Text>
-          <TextInput
-            style={[styles.input, { 
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.border,
-              color: theme.colors.text
-            }]}
-            value={formData.password}
-            onChangeText={(text) => setFormData({ ...formData, password: text })}
-            placeholder="Enter your password"
-            placeholderTextColor={theme.colors.textSecondary}
-            secureTextEntry
-          />
-        </View>
+        {authMode === 'signin' && (
+          <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Password</Text>
+            <TextInput
+              style={[styles.input, { 
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                color: theme.colors.text
+              }]}
+              value={formData.password}
+              onChangeText={(text) => setFormData({ ...formData, password: text })}
+              placeholder="Enter your password"
+              placeholderTextColor={theme.colors.textSecondary}
+              secureTextEntry
+            />
+          </View>
+        )}
+
+        {authMode === 'forgot_confirm' && (
+          <View>
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Reset Code</Text>
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                  color: theme.colors.text
+                }]}
+                value={formData.resetCode}
+                onChangeText={(text) => setFormData({ ...formData, resetCode: text })}
+                placeholder="Enter email reset code"
+                placeholderTextColor={theme.colors.textSecondary}
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, { color: theme.colors.text }]}>New Password</Text>
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                  color: theme.colors.text
+                }]}
+                value={formData.newPassword}
+                onChangeText={(text) => setFormData({ ...formData, newPassword: text })}
+                placeholder="Enter a new password"
+                placeholderTextColor={theme.colors.textSecondary}
+                secureTextEntry
+              />
+            </View>
+          </View>
+        )}
 
         <TouchableOpacity
           style={[styles.authButton, { 
-            backgroundColor: (!formData.name.trim() || !formData.password.trim() || loading) 
+            backgroundColor: (
+              !formData.email.trim() ||
+              (authMode === 'signin' && !formData.password.trim()) ||
+              (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) ||
+              loading
+            )
               ? theme.colors.textSecondary 
               : theme.colors.primary 
           }]}
           onPress={handleAuth}
-          disabled={!formData.name.trim() || !formData.password.trim() || loading}
+          disabled={
+            !formData.email.trim() ||
+            (authMode === 'signin' && !formData.password.trim()) ||
+            (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) ||
+            loading
+          }
         >
           <Text style={styles.authButtonText}>
-            {loading ? 'Loading...' : (authMode === 'signin' ? 'Sign In' : 'Create Account')}
+            {loading && 'Loading...'}
+            {!loading && authMode === 'signin' && 'Sign In'}
+            {!loading && authMode === 'forgot_request' && 'Send Reset Code'}
+            {!loading && authMode === 'forgot_confirm' && 'Reset Password'}
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.switchModeButton}
-          onPress={() => {
-            setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
-            setFormData({ name: '', password: '' });
-          }}
-        >
-          <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
-            {authMode === 'signin' 
-              ? "Don't have an account? Create one"
-              : "Already have an account? Sign in"
-            }
-          </Text>
-        </TouchableOpacity>
+        {authMode === 'signin' && (
+          <TouchableOpacity
+            style={styles.switchModeButton}
+            onPress={() => {
+              setAuthMode('forgot_request');
+              setFormData({ ...formData, resetCode: '', newPassword: '' });
+            }}
+          >
+            <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
+              Forgot password?
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {(authMode === 'forgot_request' || authMode === 'forgot_confirm') && (
+          <TouchableOpacity
+            style={styles.switchModeButton}
+            onPress={() => {
+              setAuthMode('signin');
+              setFormData({ ...formData, resetCode: '', newPassword: '' });
+            }}
+          >
+            <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
+              Back to sign in
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {authMode === 'signin' && users.length > 0 && (
-        <View style={styles.existingUsersContainer}>
-          <Text style={[styles.existingUsersTitle, { color: theme.colors.text }]}>
-            Existing Profiles
-          </Text>
-          
-          {/* Search Input */}
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
-            <TextInput
-              style={[styles.searchInput, { 
-                backgroundColor: theme.colors.background,
-                borderColor: theme.colors.border,
-                color: theme.colors.text
-              }]}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search existing accounts..."
-              placeholderTextColor={theme.colors.textSecondary}
-            />
-          </View>
-
-
-
-          {/* Scrollable Users List */}
-          <ScrollView 
-            style={styles.scrollableUsersList}
-            showsVerticalScrollIndicator={true}
-            nestedScrollEnabled={true}
-          >
-            {users
-              .filter(user => 
-                user.name.toLowerCase().includes(searchQuery.toLowerCase())
-              )
-              .map((existingUser) => (
-                <TouchableOpacity
-                  key={existingUser.id}
-                  style={[styles.existingUserItem, { 
-                    backgroundColor: theme.colors.surface,
-                    borderColor: theme.colors.border
-                  }]}
-                  onPress={() => setFormData({ ...formData, name: existingUser.name })}
-                >
-                  <Ionicons name="person-circle" size={24} color={theme.colors.primary} />
-                  <View style={styles.userInfoSection}>
-                    <Text style={[styles.existingUserName, { 
-                      color: theme.colors.text
-                    }]}>
-                      {existingUser.name}
-                    </Text>
-                    <Text style={[styles.existingUserStats, { color: theme.colors.textSecondary }]}>
-                      {existingUser.stats.allTimeMatches} matches
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))
-            }
-          </ScrollView>
-        </View>
-      )}
+      <Text style={[styles.authHint, { color: theme.colors.textSecondary }]}>
+        Accounts are invite-only. Scouting lead and drive team roles are assigned by admins.
+      </Text>
     </View>
   );
 
@@ -286,14 +293,13 @@ export default function ProfileScreen() {
         <Text style={[styles.roleSectionTitle, { color: theme.colors.text }]}>Role</Text>
         <View style={styles.roleButtonRow}>
           {roleOptions.map((option) => (
-            <TouchableOpacity
+            <View
               key={option.key}
               style={[
                 styles.roleButton,
                 { borderColor: theme.colors.border },
                 currentRole === option.key && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }
               ]}
-              onPress={() => updateUserRole(option.key)}
             >
               <Text
                 style={[
@@ -304,9 +310,12 @@ export default function ProfileScreen() {
               >
                 {option.label}
               </Text>
-            </TouchableOpacity>
+            </View>
           ))}
         </View>
+        <Text style={[styles.roleNote, { color: theme.colors.textSecondary }]}>
+          Role is managed by scouting lead / drive team admins.
+        </Text>
       </View>
 
       <View style={styles.statsContainer}>
@@ -777,6 +786,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  authHint: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 8,
+  },
   existingUsersContainer: {
     marginTop: 20,
   },
@@ -848,6 +863,11 @@ const styles = StyleSheet.create({
   roleButtonText: {
     fontSize: 13,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  roleNote: {
+    marginTop: 10,
+    fontSize: 12,
     textAlign: 'center',
   },
   statsContainer: {
