@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAuth as useClerkAuth, useUser, useSignIn, useSignUp } from '@clerk/clerk-expo';
 import apiService from '../utils/apiService';
 
 const AuthContext = createContext();
@@ -14,7 +13,10 @@ export const USER_ROLES = {
 
 const VALID_ROLES = new Set(Object.values(USER_ROLES));
 const DEFAULT_USER_ROLE = USER_ROLES.VIEWER;
+
 const PROFILES_STORAGE_KEY = 'stormwatch_profiles';
+const AUTH_TOKEN_STORAGE_KEY = 'stormwatch_auth_token';
+const AUTH_USER_STORAGE_KEY = 'stormwatch_auth_user';
 
 const defaultStats = {
   totalMatches: 0,
@@ -41,31 +43,26 @@ const normalizeUser = (rawUser) => {
   };
 };
 
-const getRoleFromMetadata = (clerkUser) => {
-  const roleFromMetadata = clerkUser?.publicMetadata?.role;
-  return VALID_ROLES.has(roleFromMetadata) ? roleFromMetadata : DEFAULT_USER_ROLE;
-};
+const mapBackendUser = (backendUser, existingProfile = null) => {
+  const firstName = (backendUser.first_name || '').trim();
+  const lastName = (backendUser.last_name || '').trim();
+  const fullName = `${firstName} ${lastName}`.trim();
 
-const getDisplayName = (clerkUser) => {
-  const fullName = [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(' ').trim();
-  if (fullName) {
-    return fullName;
-  }
-  if (clerkUser?.username) {
-    return clerkUser.username;
-  }
-  const email = clerkUser?.primaryEmailAddress?.emailAddress;
-  if (email && email.includes('@')) {
-    return email.split('@')[0];
-  }
-  return 'Scouter';
+  return normalizeUser({
+    id: backendUser.id,
+    email: backendUser.email || null,
+    name: fullName || backendUser.email || 'User',
+    role: backendUser.role || DEFAULT_USER_ROLE,
+    createdAt: existingProfile?.createdAt || (backendUser.created_at ? new Date(backendUser.created_at * 1000).toISOString() : new Date().toISOString()),
+    stats: existingProfile?.stats || defaultStats,
+  });
 };
 
 const getMockProfiles = () => [
   {
     id: 'mock1',
     name: 'Alex Chen',
-    role: DEFAULT_USER_ROLE,
+    role: USER_ROLES.SCOUTER,
     teamNumber: 1234,
     createdAt: '2024-01-15T10:00:00.000Z',
     stats: {
@@ -83,7 +80,7 @@ const getMockProfiles = () => [
   {
     id: 'mock2',
     name: 'Jordan Smith',
-    role: DEFAULT_USER_ROLE,
+    role: USER_ROLES.SCOUTER,
     teamNumber: 5678,
     createdAt: '2024-01-20T14:30:00.000Z',
     stats: {
@@ -101,7 +98,7 @@ const getMockProfiles = () => [
   {
     id: 'mock3',
     name: 'Taylor Johnson',
-    role: DEFAULT_USER_ROLE,
+    role: USER_ROLES.SCOUTER,
     teamNumber: 9012,
     createdAt: '2024-02-01T09:15:00.000Z',
     stats: {
@@ -116,96 +113,6 @@ const getMockProfiles = () => [
       allTimeMatches: 52,
     },
   },
-  {
-    id: 'mock4',
-    name: 'Casey Williams',
-    role: DEFAULT_USER_ROLE,
-    teamNumber: 3456,
-    createdAt: '2024-01-10T16:45:00.000Z',
-    stats: {
-      totalMatches: 29,
-      eventMatches: {
-        '2024week1': 8,
-        '2024week2': 6,
-        '2024week3': 9,
-        '2024regional': 6,
-      },
-      seasonMatches: 29,
-      allTimeMatches: 73,
-    },
-  },
-  {
-    id: 'mock5',
-    name: 'Morgan Davis',
-    role: DEFAULT_USER_ROLE,
-    teamNumber: 7890,
-    createdAt: '2024-01-25T11:20:00.000Z',
-    stats: {
-      totalMatches: 41,
-      eventMatches: {
-        '2024week1': 11,
-        '2024week2': 10,
-        '2024week3': 13,
-        '2024regional': 7,
-      },
-      seasonMatches: 41,
-      allTimeMatches: 89,
-    },
-  },
-  {
-    id: 'mock6',
-    name: 'Riley Thompson',
-    role: DEFAULT_USER_ROLE,
-    teamNumber: 1357,
-    createdAt: '2024-02-05T13:30:00.000Z',
-    stats: {
-      totalMatches: 33,
-      eventMatches: {
-        '2024week1': 9,
-        '2024week2': 8,
-        '2024week3': 10,
-        '2024regional': 6,
-      },
-      seasonMatches: 33,
-      allTimeMatches: 67,
-    },
-  },
-  {
-    id: 'mock7',
-    name: 'Sam Rodriguez',
-    role: DEFAULT_USER_ROLE,
-    teamNumber: 2468,
-    createdAt: '2024-01-28T08:45:00.000Z',
-    stats: {
-      totalMatches: 47,
-      eventMatches: {
-        '2024week1': 13,
-        '2024week2': 11,
-        '2024week3': 14,
-        '2024regional': 9,
-      },
-      seasonMatches: 47,
-      allTimeMatches: 102,
-    },
-  },
-  {
-    id: 'mock8',
-    name: 'Avery Kim',
-    role: DEFAULT_USER_ROLE,
-    teamNumber: 8642,
-    createdAt: '2024-02-10T15:20:00.000Z',
-    stats: {
-      totalMatches: 25,
-      eventMatches: {
-        '2024week1': 7,
-        '2024week2': 6,
-        '2024week3': 8,
-        '2024regional': 4,
-      },
-      seasonMatches: 25,
-      allTimeMatches: 25,
-    },
-  },
 ].map(normalizeUser);
 
 export const useAuth = () => {
@@ -217,14 +124,8 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const { isLoaded: clerkLoaded, isSignedIn, signOut: clerkSignOut } = useClerkAuth();
-  const { user: clerkUser } = useUser();
-  const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
-  const { isLoaded: signUpLoaded, signUp } = useSignUp();
-
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
-  const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const saveUsers = useCallback(async (updatedUsers) => {
@@ -236,208 +137,140 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  useEffect(() => {
-    const loadStoredProfiles = async () => {
-      try {
-        const storedProfiles = await AsyncStorage.getItem(PROFILES_STORAGE_KEY);
-        if (storedProfiles) {
-          const normalizedProfiles = JSON.parse(storedProfiles).map(normalizeUser);
-          setUsers(normalizedProfiles);
-        } else {
-          const mockProfiles = getMockProfiles();
-          await AsyncStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(mockProfiles));
-          setUsers(mockProfiles);
-        }
-      } catch (error) {
-        console.error('Error loading stored profiles:', error);
-        setUsers(getMockProfiles());
-      } finally {
-        setProfilesLoaded(true);
-      }
-    };
+  const upsertProfile = useCallback(async (backendUser) => {
+    setUsers((prevUsers) => {
+      const existingProfile = prevUsers.find((profile) => profile.id === backendUser.id) || null;
+      const mappedUser = mapBackendUser(backendUser, existingProfile);
+      const updatedUsers = existingProfile
+        ? prevUsers.map((profile) => (profile.id === mappedUser.id ? mappedUser : profile))
+        : [...prevUsers, mappedUser];
 
-    loadStoredProfiles();
+      AsyncStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(updatedUsers)).catch((err) => {
+        console.error('Error saving users:', err);
+      });
+      setUser(mappedUser);
+      AsyncStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(mappedUser)).catch((err) => {
+        console.error('Error saving auth user:', err);
+      });
+
+      return updatedUsers;
+    });
   }, []);
 
   useEffect(() => {
-    if (!profilesLoaded || !clerkLoaded) {
-      return;
-    }
+    const bootstrap = async () => {
+      try {
+        const storedProfiles = await AsyncStorage.getItem(PROFILES_STORAGE_KEY);
+        const parsedProfiles = storedProfiles ? JSON.parse(storedProfiles).map(normalizeUser) : getMockProfiles();
+        setUsers(parsedProfiles);
+        if (!storedProfiles) {
+          await AsyncStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(parsedProfiles));
+        }
 
-    if (!isSignedIn || !clerkUser) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
+        const token = await AsyncStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+        if (token) {
+          apiService.setAuthToken(token);
+          try {
+            const me = await apiService.authMe();
+            const backendUser = me.user || me;
+            const existingProfile = parsedProfiles.find((profile) => profile.id === backendUser.id) || null;
+            const mappedUser = mapBackendUser(backendUser, existingProfile);
 
-    const syncSignedInUser = async () => {
-      const existingProfile = users.find((profile) => profile.id === clerkUser.id);
-      const normalizedProfile = normalizeUser({
-        id: clerkUser.id,
-        name: getDisplayName(clerkUser),
-        email: clerkUser.primaryEmailAddress?.emailAddress || null,
-        role: getRoleFromMetadata(clerkUser),
-        createdAt: existingProfile?.createdAt || (clerkUser.createdAt ? new Date(clerkUser.createdAt).toISOString() : new Date().toISOString()),
-        stats: existingProfile?.stats || defaultStats,
-      });
+            const mergedUsers = existingProfile
+              ? parsedProfiles.map((profile) => (profile.id === mappedUser.id ? mappedUser : profile))
+              : [...parsedProfiles, mappedUser];
 
-      const upsertedProfiles = existingProfile
-        ? users.map((profile) => (profile.id === clerkUser.id ? normalizedProfile : profile))
-        : [...users, normalizedProfile];
-
-      const changed = JSON.stringify(existingProfile || null) !== JSON.stringify(normalizedProfile);
-      if (!existingProfile || changed) {
-        await saveUsers(upsertedProfiles);
+            setUsers(mergedUsers);
+            setUser(mappedUser);
+            await AsyncStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(mergedUsers));
+            await AsyncStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(mappedUser));
+          } catch (error) {
+            console.error('Stored session is invalid:', error);
+            apiService.setAuthToken(null);
+            await AsyncStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+            await AsyncStorage.removeItem(AUTH_USER_STORAGE_KEY);
+            setUser(null);
+          }
+        } else {
+          const storedUser = await AsyncStorage.getItem(AUTH_USER_STORAGE_KEY);
+          if (storedUser) {
+            setUser(normalizeUser(JSON.parse(storedUser)));
+          }
+        }
+      } catch (error) {
+        console.error('Error bootstrapping auth context:', error);
+      } finally {
+        setLoading(false);
       }
-
-      setUser(normalizedProfile);
-      setLoading(false);
     };
 
-    syncSignedInUser();
-  }, [profilesLoaded, clerkLoaded, isSignedIn, clerkUser, users, saveUsers]);
+    bootstrap();
+  }, []);
 
   const createAccount = async (email, password, firstName, lastName) => {
-    if (!signUpLoaded) {
-      throw new Error('Authentication is still loading. Please try again.');
-    }
-    if (!email.trim() || !password.trim()) {
-      throw new Error('Email and password are required');
-    }
-    if (!firstName.trim() || !lastName.trim()) {
-      throw new Error('First and last name are required');
+    if (!email.trim() || !password.trim() || !firstName.trim() || !lastName.trim()) {
+      throw new Error('Email, password, first name, and last name are required');
     }
 
-    const result = await signUp.create({
-      emailAddress: email.trim(),
+    const result = await apiService.authRegister({
+      email: email.trim(),
       password,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      unsafeMetadata: {
-        role: DEFAULT_USER_ROLE,
-      },
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
     });
 
-    if (result.status === 'complete') {
-      await setActive({ session: result.createdSessionId });
-      return;
-    }
+    const token = result.token;
+    const backendUser = result.user;
+    apiService.setAuthToken(token);
+    await AsyncStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    await upsertProfile(backendUser);
 
-    throw new Error('Account created but requires verification in Clerk settings. Complete verification, then sign in.');
+    return backendUser;
   };
 
-  const signInWithPassword = async (email, password) => {
-    if (!signInLoaded) {
-      throw new Error('Authentication is still loading. Please try again.');
-    }
-
+  const signIn = async (email, password) => {
     if (!email.trim() || !password.trim()) {
       throw new Error('Email and password are required');
     }
 
-    await signIn.create({
-      identifier: email.trim(),
-    });
-
-    const result = await signIn.attemptFirstFactor({
-      strategy: 'password',
+    const result = await apiService.authLogin({
+      email: email.trim(),
       password,
     });
 
-    if (result.status === 'complete') {
-      await setActive({ session: result.createdSessionId });
-      return { status: 'complete' };
-    }
+    const token = result.token;
+    const backendUser = result.user;
+    apiService.setAuthToken(token);
+    await AsyncStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    await upsertProfile(backendUser);
 
-    if (result.status === 'needs_second_factor') {
-      return { status: 'needs_second_factor' };
-    }
-
-    throw new Error(`Unable to sign in. Clerk status: ${result.status}`);
-  };
-
-  const completeSecondFactor = async (code) => {
-    if (!signInLoaded) {
-      throw new Error('Authentication is still loading. Please try again.');
-    }
-    if (!code || !code.trim()) {
-      throw new Error('MFA code is required');
-    }
-
-    const availableFactors = signIn?.supportedSecondFactors || [];
-    const preferredStrategies = ['totp', 'phone_code', 'backup_code'];
-    let selectedStrategy = '';
-    for (const strategy of preferredStrategies) {
-      if (availableFactors.some((factor) => factor.strategy === strategy)) {
-        selectedStrategy = strategy;
-        break;
-      }
-    }
-    if (!selectedStrategy && availableFactors.length > 0) {
-      selectedStrategy = availableFactors[0].strategy;
-    }
-    if (!selectedStrategy) {
-      throw new Error('No supported MFA strategy found for this account.');
-    }
-
-    const result = await signIn.attemptSecondFactor({
-      strategy: selectedStrategy,
-      code: code.trim(),
-    });
-
-    if (result.status === 'complete') {
-      await setActive({ session: result.createdSessionId });
-      return;
-    }
-
-    throw new Error(`Unable to complete MFA. Clerk status: ${result.status}`);
-  };
-
-  const startPasswordReset = async (email) => {
-    if (!signInLoaded) {
-      throw new Error('Authentication is still loading. Please try again.');
-    }
-
-    if (!email.trim()) {
-      throw new Error('Email is required');
-    }
-
-    await signIn.create({
-      strategy: 'reset_password_email_code',
-      identifier: email.trim(),
-    });
-  };
-
-  const completePasswordReset = async (code, newPassword) => {
-    if (!signInLoaded) {
-      throw new Error('Authentication is still loading. Please try again.');
-    }
-
-    if (!code.trim() || !newPassword.trim()) {
-      throw new Error('Reset code and new password are required');
-    }
-
-    const result = await signIn.attemptFirstFactor({
-      strategy: 'reset_password_email_code',
-      code: code.trim(),
-      password: newPassword,
-    });
-
-    if (result.status === 'complete') {
-      await setActive({ session: result.createdSessionId });
-      return;
-    }
-
-    throw new Error('Unable to reset password. Verify your code and try again.');
+    return { status: 'complete' };
   };
 
   const signOut = async () => {
     try {
-      await clerkSignOut();
-      setUser(null);
+      await apiService.authLogout();
     } catch (error) {
-      console.error('Error signing out:', error);
+      // best-effort logout
+      console.error('Backend logout failed:', error);
     }
+
+    apiService.setAuthToken(null);
+    await AsyncStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    await AsyncStorage.removeItem(AUTH_USER_STORAGE_KEY);
+    setUser(null);
+  };
+
+  const completeSecondFactor = async () => {
+    throw new Error('MFA is not configured for local auth.');
+  };
+
+  const startPasswordReset = async () => {
+    throw new Error('Password reset is not yet implemented for local auth.');
+  };
+
+  const completePasswordReset = async () => {
+    throw new Error('Password reset is not yet implemented for local auth.');
   };
 
   const updateUserRole = async (targetUserID, targetRole) => {
@@ -451,8 +284,7 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Invalid role update request.');
     }
 
-    await apiService.updateClerkUserRole({
-      requester_id: user.id,
+    await apiService.updateUserRole({
       target_user_id: targetUserID,
       target_role: targetRole,
     });
@@ -463,32 +295,10 @@ export const AuthProvider = ({ children }) => {
     await saveUsers(updatedUsers);
 
     if (user.id === targetUserID) {
-      setUser((prev) => (prev ? normalizeUser({ ...prev, role: targetRole }) : prev));
+      const updatedCurrent = normalizeUser({ ...user, role: targetRole });
+      setUser(updatedCurrent);
+      await AsyncStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(updatedCurrent));
     }
-  };
-
-  const updateUserStats = async (matchData) => {
-    if (!user) {
-      return;
-    }
-
-    const updatedUser = {
-      ...user,
-      stats: {
-        ...user.stats,
-        totalMatches: user.stats.totalMatches + 1,
-        seasonMatches: user.stats.seasonMatches + 1,
-        allTimeMatches: user.stats.allTimeMatches + 1,
-        eventMatches: {
-          ...user.stats.eventMatches,
-          [matchData.eventKey]: (user.stats.eventMatches[matchData.eventKey] || 0) + 1,
-        },
-      },
-    };
-
-    const updatedUsers = users.map((profile) => (profile.id === user.id ? updatedUser : profile));
-    await saveUsers(updatedUsers);
-    setUser(updatedUser);
   };
 
   const getLeaderboard = (type = 'allTime', eventKey = null) => {
@@ -534,16 +344,41 @@ export const AuthProvider = ({ children }) => {
     }));
   };
 
+  const updateUserStats = async (matchData) => {
+    if (!user) {
+      return;
+    }
+
+    const updatedUser = {
+      ...user,
+      stats: {
+        ...user.stats,
+        totalMatches: user.stats.totalMatches + 1,
+        seasonMatches: user.stats.seasonMatches + 1,
+        allTimeMatches: user.stats.allTimeMatches + 1,
+        eventMatches: {
+          ...user.stats.eventMatches,
+          [matchData.eventKey]: (user.stats.eventMatches[matchData.eventKey] || 0) + 1,
+        },
+      },
+    };
+
+    const updatedUsers = users.map((profile) => (profile.id === user.id ? updatedUser : profile));
+    await saveUsers(updatedUsers);
+    setUser(updatedUser);
+    await AsyncStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(updatedUser));
+  };
+
   const value = {
     user,
     users,
     loading,
     createAccount,
-    signIn: signInWithPassword,
+    signIn,
+    signOut,
     completeSecondFactor,
     startPasswordReset,
     completePasswordReset,
-    signOut,
     updateUserRole,
     updateUserStats,
     getLeaderboard,
