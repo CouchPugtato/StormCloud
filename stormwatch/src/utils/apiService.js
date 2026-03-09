@@ -5,6 +5,11 @@ const API_BASE_URL = getApiBaseURL();
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
+    this.authToken = null;
+  }
+
+  setAuthToken(token) {
+    this.authToken = token || null;
   }
 
   async request(endpoint, options = {}) {
@@ -12,6 +17,7 @@ class ApiService {
     const config = {
       headers: {
         'Content-Type': 'application/json',
+        ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
         ...options.headers,
       },
       ...options,
@@ -21,7 +27,16 @@ class ApiService {
       const response = await fetch(url, config);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorPayload = await response.json();
+          if (errorPayload?.error) {
+            errorMessage = errorPayload.error;
+          }
+        } catch (_) {
+          // no-op, keep default message
+        }
+        throw new Error(errorMessage);
       }
       
       return await response.json();
@@ -210,12 +225,36 @@ class ApiService {
     });
   }
 
-  async getClerkUsers() {
-    return this.request('/clerk/users');
+  async authRegister(payload) {
+    return this.request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 
-  async updateClerkUserRole(payload) {
-    return this.request('/clerk/users/role', {
+  async authLogin(payload) {
+    return this.request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async authMe() {
+    return this.request('/auth/me');
+  }
+
+  async authLogout() {
+    return this.request('/auth/logout', {
+      method: 'POST',
+    });
+  }
+
+  async getUsers() {
+    return this.request('/users');
+  }
+
+  async updateUserRole(payload) {
+    return this.request('/users/role', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

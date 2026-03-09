@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   FlatList,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -17,10 +18,10 @@ import apiService from '../utils/apiService';
 
 export default function ProfileScreen() {
   const { theme } = useTheme();
-  const { user, signIn, signOut, createAccount, updateUserRole, getLeaderboard, startPasswordReset, completePasswordReset, completeSecondFactor } = useAuth();
+  const { user, signIn, signOut, createAccount, updateUserRole, getLeaderboard } = useAuth();
   const [activeTab, setActiveTab] = useState('leaderboard');
-  const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup' | 'mfa' | 'forgot_request' | 'forgot_confirm'
-  const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '', mfaCode: '', resetCode: '', newPassword: '' });
+  const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup'
+  const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
   const [leaderboardType, setLeaderboardType] = useState('event');
   const [selectedEvent, setSelectedEvent] = useState('2024week1');
   const [loading, setLoading] = useState(false);
@@ -38,6 +39,7 @@ export default function ProfileScreen() {
   ];
   const upgradableRoleOptions = roleOptions.filter((role) => role.key !== USER_ROLES.VIEWER);
   const currentRole = user?.role || USER_ROLES.VIEWER;
+  const isAuthModalLarge = authMode === 'signup';
 
   const upcomingMatches = [
     {
@@ -92,7 +94,7 @@ export default function ProfileScreen() {
       }
       setAccountsLoading(true);
       try {
-        const accounts = await apiService.getClerkUsers();
+        const accounts = await apiService.getUsers();
         setAllAccounts(accounts);
       } catch (error) {
         Alert.alert('Error', 'Unable to load account list.');
@@ -107,7 +109,7 @@ export default function ProfileScreen() {
   const handleAuth = async () => {
     setAuthMessage('');
 
-    if (authMode !== 'mfa' && !formData.email.trim()) {
+    if (!formData.email.trim()) {
       setAuthMessageType('error');
       setAuthMessage('Please enter your email');
       return;
@@ -137,44 +139,18 @@ export default function ProfileScreen() {
       return;
     }
 
-    if (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) {
-      setAuthMessageType('error');
-      setAuthMessage('Please enter your reset code and new password');
-      return;
-    }
-    if (authMode === 'mfa' && !formData.mfaCode.trim()) {
-      setAuthMessageType('error');
-      setAuthMessage('Please enter your MFA code');
-      return;
-    }
-
     setLoading(true);
     try {
       if (authMode === 'signin') {
-        const result = await signIn(formData.email.trim(), formData.password);
-        if (result?.status === 'needs_second_factor') {
-          setAuthMode('mfa');
-          setAuthMessageType('success');
-          setAuthMessage('Second factor required. Enter your MFA code.');
-        } else {
-          setShowAuthModal(false);
-        }
+        await signIn(formData.email.trim(), formData.password);
+        setShowAuthModal(false);
       } else if (authMode === 'signup') {
+        setAuthMessageType('success');
+        setAuthMessage('Creating account...');
         await createAccount(formData.email.trim(), formData.password, formData.firstName.trim(), formData.lastName.trim());
         setShowAuthModal(false);
-      } else if (authMode === 'mfa') {
-        await completeSecondFactor(formData.mfaCode.trim());
-        setShowAuthModal(false);
-      } else if (authMode === 'forgot_request') {
-        await startPasswordReset(formData.email.trim());
-        setAuthMessageType('success');
-        setAuthMessage('Reset code sent. Check your email.');
-        setAuthMode('forgot_confirm');
-      } else if (authMode === 'forgot_confirm') {
-        await completePasswordReset(formData.resetCode.trim(), formData.newPassword);
-        setShowAuthModal(false);
       }
-      setFormData({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '', mfaCode: '', resetCode: '', newPassword: '' });
+      setFormData({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
     } catch (error) {
       setAuthMessageType('error');
       setAuthMessage(error?.errors?.[0]?.longMessage || error.message || 'Authentication failed');
@@ -184,6 +160,14 @@ export default function ProfileScreen() {
   };
 
   const handleSignOut = () => {
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' ? window.confirm('Are you sure you want to sign out?') : true;
+      if (confirmed) {
+        signOut();
+      }
+      return;
+    }
+
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
@@ -212,16 +196,10 @@ export default function ProfileScreen() {
         <Text style={[styles.authTitle, { color: theme.colors.text }]}>
           {authMode === 'signin' && 'Sign In'}
           {authMode === 'signup' && 'Create Account'}
-          {authMode === 'mfa' && 'Two-Step Verification'}
-          {authMode === 'forgot_request' && 'Reset Password'}
-          {authMode === 'forgot_confirm' && 'Enter Reset Code'}
         </Text>
           <Text style={[styles.authSubtitle, { color: theme.colors.textSecondary }]}>
-          {authMode === 'signin' && 'Sign in with your Clerk account'}
+          {authMode === 'signin' && 'Sign in with your StormCloud account'}
           {authMode === 'signup' && 'Create a new account. New users start as Viewer.'}
-          {authMode === 'mfa' && 'Enter the verification code from your authenticator app or second factor method.'}
-          {authMode === 'forgot_request' && 'We will email a reset code to your account'}
-          {authMode === 'forgot_confirm' && 'Enter the code and choose a new password'}
         </Text>
       </View>
 
@@ -319,69 +297,12 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {authMode === 'forgot_confirm' && (
-          <View>
-            <View style={styles.inputContainer}>
-              <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Reset Code</Text>
-              <TextInput
-                style={[styles.input, { 
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.border,
-                  color: theme.colors.text
-                }]}
-                value={formData.resetCode}
-                onChangeText={(text) => setFormData({ ...formData, resetCode: text })}
-                placeholder="Enter email reset code"
-                placeholderTextColor={theme.colors.textSecondary}
-                autoCapitalize="none"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={[styles.inputLabel, { color: theme.colors.text }]}>New Password</Text>
-              <TextInput
-                style={[styles.input, { 
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.border,
-                  color: theme.colors.text
-                }]}
-                value={formData.newPassword}
-                onChangeText={(text) => setFormData({ ...formData, newPassword: text })}
-                placeholder="Enter a new password"
-                placeholderTextColor={theme.colors.textSecondary}
-                secureTextEntry
-              />
-            </View>
-          </View>
-        )}
-
-        {authMode === 'mfa' && (
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>MFA Code</Text>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: theme.colors.surface,
-                borderColor: theme.colors.border,
-                color: theme.colors.text
-              }]}
-              value={formData.mfaCode}
-              onChangeText={(text) => setFormData({ ...formData, mfaCode: text })}
-              placeholder="123456"
-              placeholderTextColor={theme.colors.textSecondary}
-              autoCapitalize="none"
-              keyboardType="number-pad"
-            />
-          </View>
-        )}
-
         <TouchableOpacity
           style={[styles.authButton, { 
             backgroundColor: (
-              (authMode !== 'mfa' && !formData.email.trim()) ||
+              !formData.email.trim() ||
               ((authMode === 'signin' || authMode === 'signup') && !formData.password.trim()) ||
               (authMode === 'signup' && !formData.confirmPassword.trim()) ||
-              (authMode === 'mfa' && !formData.mfaCode.trim()) ||
-              (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) ||
               loading
             )
               ? theme.colors.textSecondary 
@@ -389,11 +310,9 @@ export default function ProfileScreen() {
           }]}
           onPress={handleAuth}
           disabled={
-            (authMode !== 'mfa' && !formData.email.trim()) ||
+            !formData.email.trim() ||
             ((authMode === 'signin' || authMode === 'signup') && !formData.password.trim()) ||
             (authMode === 'signup' && !formData.confirmPassword.trim()) ||
-            (authMode === 'mfa' && !formData.mfaCode.trim()) ||
-            (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) ||
             loading
           }
         >
@@ -401,9 +320,6 @@ export default function ProfileScreen() {
             {loading && 'Loading...'}
             {!loading && authMode === 'signin' && 'Sign In'}
             {!loading && authMode === 'signup' && 'Create Account'}
-            {!loading && authMode === 'mfa' && 'Verify Code'}
-            {!loading && authMode === 'forgot_request' && 'Send Reset Code'}
-            {!loading && authMode === 'forgot_confirm' && 'Reset Password'}
           </Text>
         </TouchableOpacity>
 
@@ -413,7 +329,7 @@ export default function ProfileScreen() {
             onPress={() => {
               setAuthMode('signup');
               setAuthMessage('');
-              setFormData({ ...formData, firstName: '', lastName: '', password: '', confirmPassword: '', mfaCode: '' });
+              setFormData({ ...formData, firstName: '', lastName: '', password: '', confirmPassword: '' });
             }}
           >
             <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
@@ -422,28 +338,13 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         )}
 
-        {authMode === 'signin' && (
-          <TouchableOpacity
-            style={styles.switchModeButton}
-            onPress={() => {
-              setAuthMode('forgot_request');
-              setAuthMessage('');
-              setFormData({ ...formData, password: '', confirmPassword: '', mfaCode: '', resetCode: '', newPassword: '' });
-            }}
-          >
-            <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
-              Forgot password?
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {(authMode === 'signup' || authMode === 'mfa' || authMode === 'forgot_request' || authMode === 'forgot_confirm') && (
+        {authMode === 'signup' && (
           <TouchableOpacity
             style={styles.switchModeButton}
             onPress={() => {
               setAuthMode('signin');
               setAuthMessage('');
-              setFormData({ ...formData, password: '', confirmPassword: '', mfaCode: '', resetCode: '', newPassword: '' });
+              setFormData({ ...formData, password: '', confirmPassword: '' });
             }}
           >
             <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
@@ -513,7 +414,7 @@ export default function ProfileScreen() {
               <View key={account.id} style={[styles.accountRow, { borderColor: theme.colors.border }]}>
                 <View style={styles.accountInfo}>
                   <Text style={[styles.accountName, { color: theme.colors.text }]}>
-                    {account.name || account.email || account.id}
+                    {[account.first_name, account.last_name].filter(Boolean).join(' ') || account.name || account.email || account.id}
                   </Text>
                   <Text style={[styles.accountMeta, { color: theme.colors.textSecondary }]}>
                     Current role: {(account.role || USER_ROLES.VIEWER).replace('_', ' ')}
@@ -850,20 +751,22 @@ export default function ProfileScreen() {
         </ScrollView>
         {showAuthModal && (
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+            <View
+              style={[
+                styles.modalContent,
+                isAuthModalLarge && styles.modalContentLarge,
+                { backgroundColor: theme.colors.surface },
+              ]}
+            >
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setShowAuthModal(false)}
               >
                 <Ionicons name="close" size={24} color={theme.colors.text} />
               </TouchableOpacity>
-              <ScrollView 
-                style={styles.modalScrollView}
-                showsVerticalScrollIndicator={true}
-                nestedScrollEnabled={true}
-              >
+              <View style={styles.modalBody}>
                 {renderAuthForm()}
-              </ScrollView>
+              </View>
             </View>
           </View>
         )}
@@ -1318,14 +1221,17 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '90%',
     maxWidth: 400,
-    maxHeight: '80%',
+    maxHeight: '78%',
     borderRadius: 12,
     paddingVertical: 20,
     paddingHorizontal: 18,
     ...platformUtils.getPlatformElevation(5),
   },
-  modalScrollView: {
-    maxHeight: '100%',
+  modalContentLarge: {
+    maxWidth: 520,
+    maxHeight: '92%',
+  },
+  modalBody: {
     width: '100%',
   },
   closeButton: {
