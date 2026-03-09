@@ -20,29 +20,45 @@ import apiService from '../utils/apiService';
 const LIST_TYPE = {
   FIRST: 'first',
   SECOND: 'second',
+  DO_NOT_PICK: 'do_not_pick',
 };
 
 const LIST_EVENT_KEY = {
   [LIST_TYPE.FIRST]: 'pick_list_first',
   [LIST_TYPE.SECOND]: 'pick_list_second',
+  [LIST_TYPE.DO_NOT_PICK]: 'pick_list_do_not_pick',
 };
 
 const EMPTY_LISTS = {
   [LIST_TYPE.FIRST]: [],
   [LIST_TYPE.SECOND]: [],
+  [LIST_TYPE.DO_NOT_PICK]: [],
 };
 
 const EMPTY_NOTES = {
   [LIST_TYPE.FIRST]: {},
   [LIST_TYPE.SECOND]: {},
+  [LIST_TYPE.DO_NOT_PICK]: {},
 };
 
 const EMPTY_STRUCK = {
   [LIST_TYPE.FIRST]: new Set(),
   [LIST_TYPE.SECOND]: new Set(),
+  [LIST_TYPE.DO_NOT_PICK]: new Set(),
 };
 
-const listTitle = (listType) => (listType === LIST_TYPE.FIRST ? 'First Pick' : 'Second Pick');
+const listTitle = (listType) => {
+  if (listType === LIST_TYPE.FIRST) return 'First Pick';
+  if (listType === LIST_TYPE.SECOND) return 'Second Pick';
+  return 'Do Not Pick';
+};
+
+const listSubtitle = (listType, count) => {
+  if (listType === LIST_TYPE.DO_NOT_PICK) {
+    return `${count} teams not being considered`;
+  }
+  return `${count} teams being considered`;
+};
 
 const mapItemsFromServer = (items = []) => {
   const list = items.map((it) => ({
@@ -85,6 +101,7 @@ export default function PickListScreen() {
   const currentUnsavedNotes = unsavedNotes[activeListType];
   const currentStruck = struckThroughTeams[activeListType];
   const canViewPickList = user?.role && user.role !== USER_ROLES.VIEWER;
+  const canAccessDoNotPick = user?.role === USER_ROLES.SCOUTING_LEAD || user?.role === USER_ROLES.DRIVE_TEAM;
 
   const persistList = async (listType, listData, notesData, struckData) => {
     try {
@@ -106,22 +123,26 @@ export default function PickListScreen() {
   useEffect(() => {
     const loadPickLists = async () => {
       try {
-        const [firstItems, secondItems] = await Promise.all([
+        const [firstItems, secondItems, doNotPickItems] = await Promise.all([
           apiService.getPickList(LIST_EVENT_KEY[LIST_TYPE.FIRST]),
           apiService.getPickList(LIST_EVENT_KEY[LIST_TYPE.SECOND]),
+          apiService.getPickList(LIST_EVENT_KEY[LIST_TYPE.DO_NOT_PICK]),
         ]);
 
         const first = mapItemsFromServer(firstItems);
         const second = mapItemsFromServer(secondItems);
+        const doNotPick = mapItemsFromServer(doNotPickItems);
 
         setLists({
           [LIST_TYPE.FIRST]: first.list,
           [LIST_TYPE.SECOND]: second.list,
+          [LIST_TYPE.DO_NOT_PICK]: doNotPick.list,
         });
 
         setTeamNotes({
           [LIST_TYPE.FIRST]: first.notes,
           [LIST_TYPE.SECOND]: second.notes,
+          [LIST_TYPE.DO_NOT_PICK]: doNotPick.notes,
         });
 
         setUnsavedNotes(EMPTY_NOTES);
@@ -129,6 +150,7 @@ export default function PickListScreen() {
         setStruckThroughTeams({
           [LIST_TYPE.FIRST]: first.struck,
           [LIST_TYPE.SECOND]: second.struck,
+          [LIST_TYPE.DO_NOT_PICK]: doNotPick.struck,
         });
       } catch (err) {
         console.error('Failed to load pick lists:', err);
@@ -137,6 +159,12 @@ export default function PickListScreen() {
 
     loadPickLists();
   }, []);
+
+  useEffect(() => {
+    if (activeListType === LIST_TYPE.DO_NOT_PICK && !canAccessDoNotPick) {
+      setActiveListType(LIST_TYPE.FIRST);
+    }
+  }, [activeListType, canAccessDoNotPick]);
 
   useEffect(() => {
     if (showAddModal && availableTeams.length === 0) {
@@ -286,7 +314,7 @@ export default function PickListScreen() {
       <View style={[styles.header, { backgroundColor: theme.colors.primary }]}>
         <Text style={styles.headerTitle}>Pick List</Text>
         <Text style={styles.headerSubtitle}>
-          {currentList.length} teams being considered
+          {listSubtitle(activeListType, currentList.length)}
         </Text>
         <TouchableOpacity
           style={styles.addButton}
@@ -331,6 +359,25 @@ export default function PickListScreen() {
             Second Pick
           </Text>
         </TouchableOpacity>
+
+        {canAccessDoNotPick && (
+          <TouchableOpacity
+            style={[
+              styles.listTypeTab,
+              activeListType === LIST_TYPE.DO_NOT_PICK && { backgroundColor: theme.colors.primary },
+            ]}
+            onPress={() => setActiveListType(LIST_TYPE.DO_NOT_PICK)}
+          >
+            <Text
+              style={[
+                styles.listTypeTabText,
+                { color: activeListType === LIST_TYPE.DO_NOT_PICK ? 'white' : theme.colors.text },
+              ]}
+            >
+              Do Not Pick
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
