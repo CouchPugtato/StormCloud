@@ -102,9 +102,13 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Post("/push/test", PushTest(db))
 
 		r.Post("/auth", AuthenticatePassword())
+		r.Post("/auth/register", LocalAuthRegister(db))
+		r.Post("/auth/login", LocalAuthLogin(db))
+		r.Get("/auth/me", LocalAuthMe(db))
+		r.Post("/auth/logout", LocalAuthLogout(db))
 		r.Get("/app-settings", AppSettingsGet())
-		r.Get("/clerk/users", ClerkUsersList())
-		r.Post("/clerk/users/role", ClerkUserRoleUpdate())
+		r.Get("/users", LocalUsersList(db))
+		r.Post("/users/role", LocalUserRoleUpdate(db))
 
 		r.Get("/event-mode", EventModeGet(scheduler))
 		r.Post("/event-mode", EventModeSet(scheduler))

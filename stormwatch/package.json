@@ -9,7 +9,6 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@clerk/clerk-expo": "^2.19.28",
     "@expo/metro-runtime": "~5.0.4",
     "@expo/vector-icons": "^14.1.0",
     "@react-native-async-storage/async-storage": "2.1.2",
@@ -23,7 +22,6 @@
     "expo-font": "^13.3.2",
     "expo-linear-gradient": "^14.1.5",
     "expo-notifications": "^0.31.4",
-    "expo-secure-store": "~14.2.2",
     "expo-status-bar": "~2.2.3",
     "react": "19.0.0",
     "react-dom": "19.0.0",

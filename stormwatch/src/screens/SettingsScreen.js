@@ -23,6 +23,7 @@ export default function SettingsScreen() {
   const { theme, isDarkMode, themePreference, toggleTheme, setSystemTheme } = useTheme();
   const { isEventMode, toggleEventMode } = useEventMode();
   const { user } = useAuth();
+  const accountTypeLabel = (user?.role || 'viewer').replace('_', ' ');
   
   const [settings, setSettings] = useState({
     notifications: false,
@@ -151,6 +152,13 @@ export default function SettingsScreen() {
       title: 'Preferences',
       items: [
         {
+          key: 'accountType',
+          title: 'Account Type',
+          subtitle: accountTypeLabel.charAt(0).toUpperCase() + accountTypeLabel.slice(1),
+          icon: 'person-circle',
+          type: 'readonly',
+        },
+        {
           key: 'notifications',
           title: 'Push Notifications',
           subtitle: pushStatusText,
@@ -257,6 +265,10 @@ export default function SettingsScreen() {
               style={styles.themeSwitch}
               disabled={isDisabled}
             />
+          ) : item.type === 'readonly' ? (
+            <Text style={[styles.readonlyValue, { color: theme.colors.textSecondary }]}>
+              {item.subtitle}
+            </Text>
           ) : item.type === 'input' ? (
             <Ionicons name="create-outline" size={20} color={theme.colors.textSecondary} />
           ) : (
@@ -396,6 +408,11 @@ const styles = StyleSheet.create({
   },
   settingRight: {
     marginLeft: 12,
+  },
+  readonlyValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    textTransform: 'capitalize',
   },
   themeSwitch: {
     transform: [{ scaleX: 1.05 }, { scaleY: 1.05 }],
