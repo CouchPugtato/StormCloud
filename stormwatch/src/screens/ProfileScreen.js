@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,24 +13,31 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 import { platformUtils } from '../utils/platformUtils';
+import apiService from '../utils/apiService';
 
 export default function ProfileScreen() {
   const { theme } = useTheme();
-  const { user, signIn, signOut, getLeaderboard, startPasswordReset, completePasswordReset } = useAuth();
+  const { user, signIn, signOut, createAccount, updateUserRole, getLeaderboard, startPasswordReset, completePasswordReset, completeSecondFactor } = useAuth();
   const [activeTab, setActiveTab] = useState('leaderboard');
-  const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'forgot_request' | 'forgot_confirm'
-  const [formData, setFormData] = useState({ email: '', password: '', resetCode: '', newPassword: '' });
+  const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup' | 'mfa' | 'forgot_request' | 'forgot_confirm'
+  const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '', mfaCode: '', resetCode: '', newPassword: '' });
   const [leaderboardType, setLeaderboardType] = useState('event');
   const [selectedEvent, setSelectedEvent] = useState('2024week1');
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+  const [authMessageType, setAuthMessageType] = useState('error');
+  const [allAccounts, setAllAccounts] = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
 
   const roleOptions = [
+    { key: USER_ROLES.VIEWER, label: 'Viewer' },
     { key: USER_ROLES.SCOUTER, label: 'Scouter' },
     { key: USER_ROLES.SCOUTING_LEAD, label: 'Scouting Lead' },
     { key: USER_ROLES.DRIVE_TEAM, label: 'Drive Team' },
   ];
-  const currentRole = user?.role || USER_ROLES.SCOUTER;
+  const upgradableRoleOptions = roleOptions.filter((role) => role.key !== USER_ROLES.VIEWER);
+  const currentRole = user?.role || USER_ROLES.VIEWER;
 
   const upcomingMatches = [
     {
@@ -78,40 +85,99 @@ export default function ProfileScreen() {
     return getLeaderboard(leaderboardType, selectedEvent);
   }, [getLeaderboard, leaderboardType, selectedEvent]);
 
+  useEffect(() => {
+    const loadAccounts = async () => {
+      if (!user || user.role !== USER_ROLES.SCOUTING_LEAD || activeTab !== 'profile') {
+        return;
+      }
+      setAccountsLoading(true);
+      try {
+        const accounts = await apiService.getClerkUsers();
+        setAllAccounts(accounts);
+      } catch (error) {
+        Alert.alert('Error', 'Unable to load account list.');
+      } finally {
+        setAccountsLoading(false);
+      }
+    };
+
+    loadAccounts();
+  }, [user, activeTab]);
+
   const handleAuth = async () => {
-    if (!formData.email.trim()) {
-      Alert.alert('Error', 'Please enter your email');
+    setAuthMessage('');
+
+    if (authMode !== 'mfa' && !formData.email.trim()) {
+      setAuthMessageType('error');
+      setAuthMessage('Please enter your email');
       return;
     }
 
-    if (authMode === 'signin' && !formData.password.trim()) {
-      Alert.alert('Error', 'Please enter your password');
+    if ((authMode === 'signin' || authMode === 'signup') && !formData.password.trim()) {
+      setAuthMessageType('error');
+      setAuthMessage('Please enter your password');
+      return;
+    }
+
+    if (authMode === 'signup' && !formData.firstName.trim()) {
+      setAuthMessageType('error');
+      setAuthMessage('Please enter your first name');
+      return;
+    }
+
+    if (authMode === 'signup' && !formData.lastName.trim()) {
+      setAuthMessageType('error');
+      setAuthMessage('Please enter your last name');
+      return;
+    }
+
+    if (authMode === 'signup' && formData.password !== formData.confirmPassword) {
+      setAuthMessageType('error');
+      setAuthMessage('Passwords do not match');
       return;
     }
 
     if (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) {
-      Alert.alert('Error', 'Please enter your reset code and new password');
+      setAuthMessageType('error');
+      setAuthMessage('Please enter your reset code and new password');
+      return;
+    }
+    if (authMode === 'mfa' && !formData.mfaCode.trim()) {
+      setAuthMessageType('error');
+      setAuthMessage('Please enter your MFA code');
       return;
     }
 
     setLoading(true);
     try {
       if (authMode === 'signin') {
-        await signIn(formData.email.trim(), formData.password);
-        Alert.alert('Success', 'Signed in successfully!');
+        const result = await signIn(formData.email.trim(), formData.password);
+        if (result?.status === 'needs_second_factor') {
+          setAuthMode('mfa');
+          setAuthMessageType('success');
+          setAuthMessage('Second factor required. Enter your MFA code.');
+        } else {
+          setShowAuthModal(false);
+        }
+      } else if (authMode === 'signup') {
+        await createAccount(formData.email.trim(), formData.password, formData.firstName.trim(), formData.lastName.trim());
+        setShowAuthModal(false);
+      } else if (authMode === 'mfa') {
+        await completeSecondFactor(formData.mfaCode.trim());
         setShowAuthModal(false);
       } else if (authMode === 'forgot_request') {
         await startPasswordReset(formData.email.trim());
-        Alert.alert('Reset Code Sent', 'Check your email for a password reset code.');
+        setAuthMessageType('success');
+        setAuthMessage('Reset code sent. Check your email.');
         setAuthMode('forgot_confirm');
       } else if (authMode === 'forgot_confirm') {
         await completePasswordReset(formData.resetCode.trim(), formData.newPassword);
-        Alert.alert('Success', 'Password reset complete. You are now signed in.');
         setShowAuthModal(false);
       }
-      setFormData({ email: '', password: '', resetCode: '', newPassword: '' });
+      setFormData({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '', mfaCode: '', resetCode: '', newPassword: '' });
     } catch (error) {
-      Alert.alert('Error', error?.errors?.[0]?.longMessage || error.message);
+      setAuthMessageType('error');
+      setAuthMessage(error?.errors?.[0]?.longMessage || error.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
@@ -128,22 +194,78 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleRoleUpgrade = async (targetUserID, targetRole) => {
+    try {
+      await updateUserRole(targetUserID, targetRole);
+      setAllAccounts((prev) =>
+        prev.map((account) => (account.id === targetUserID ? { ...account, role: targetRole } : account))
+      );
+      Alert.alert('Success', 'User role updated.');
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to update role.');
+    }
+  };
+
   const renderAuthForm = () => (
     <View style={styles.authContainer}>
       <View style={styles.authHeader}>
         <Text style={[styles.authTitle, { color: theme.colors.text }]}>
           {authMode === 'signin' && 'Sign In'}
+          {authMode === 'signup' && 'Create Account'}
+          {authMode === 'mfa' && 'Two-Step Verification'}
           {authMode === 'forgot_request' && 'Reset Password'}
           {authMode === 'forgot_confirm' && 'Enter Reset Code'}
         </Text>
-        <Text style={[styles.authSubtitle, { color: theme.colors.textSecondary }]}>
+          <Text style={[styles.authSubtitle, { color: theme.colors.textSecondary }]}>
           {authMode === 'signin' && 'Sign in with your Clerk account'}
+          {authMode === 'signup' && 'Create a new account. New users start as Viewer.'}
+          {authMode === 'mfa' && 'Enter the verification code from your authenticator app or second factor method.'}
           {authMode === 'forgot_request' && 'We will email a reset code to your account'}
           {authMode === 'forgot_confirm' && 'Enter the code and choose a new password'}
         </Text>
       </View>
 
       <View style={styles.formContainer}>
+        {!!authMessage && (
+          <View style={[styles.authMessageBox, authMessageType === 'success' ? styles.authSuccessBox : styles.authErrorBox]}>
+            <Text style={styles.authMessageText}>{authMessage}</Text>
+          </View>
+        )}
+
+        {authMode === 'signup' && (
+          <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>First Name</Text>
+            <TextInput
+              style={[styles.input, { 
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                color: theme.colors.text
+              }]}
+              value={formData.firstName}
+              onChangeText={(text) => setFormData({ ...formData, firstName: text })}
+              placeholder="First name"
+              placeholderTextColor={theme.colors.textSecondary}
+            />
+          </View>
+        )}
+
+        {authMode === 'signup' && (
+          <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Last Name</Text>
+            <TextInput
+              style={[styles.input, { 
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                color: theme.colors.text
+              }]}
+              value={formData.lastName}
+              onChangeText={(text) => setFormData({ ...formData, lastName: text })}
+              placeholder="Last name"
+              placeholderTextColor={theme.colors.textSecondary}
+            />
+          </View>
+        )}
+
         <View style={styles.inputContainer}>
           <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Email</Text>
           <TextInput
@@ -161,7 +283,7 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {authMode === 'signin' && (
+        {(authMode === 'signin' || authMode === 'signup') && (
           <View style={styles.inputContainer}>
             <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Password</Text>
             <TextInput
@@ -173,6 +295,24 @@ export default function ProfileScreen() {
               value={formData.password}
               onChangeText={(text) => setFormData({ ...formData, password: text })}
               placeholder="Enter your password"
+              placeholderTextColor={theme.colors.textSecondary}
+              secureTextEntry
+            />
+          </View>
+        )}
+
+        {authMode === 'signup' && (
+          <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Confirm Password</Text>
+            <TextInput
+              style={[styles.input, { 
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                color: theme.colors.text
+              }]}
+              value={formData.confirmPassword}
+              onChangeText={(text) => setFormData({ ...formData, confirmPassword: text })}
+              placeholder="Confirm password"
               placeholderTextColor={theme.colors.textSecondary}
               secureTextEntry
             />
@@ -215,11 +355,32 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {authMode === 'mfa' && (
+          <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>MFA Code</Text>
+            <TextInput
+              style={[styles.input, { 
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                color: theme.colors.text
+              }]}
+              value={formData.mfaCode}
+              onChangeText={(text) => setFormData({ ...formData, mfaCode: text })}
+              placeholder="123456"
+              placeholderTextColor={theme.colors.textSecondary}
+              autoCapitalize="none"
+              keyboardType="number-pad"
+            />
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.authButton, { 
             backgroundColor: (
-              !formData.email.trim() ||
-              (authMode === 'signin' && !formData.password.trim()) ||
+              (authMode !== 'mfa' && !formData.email.trim()) ||
+              ((authMode === 'signin' || authMode === 'signup') && !formData.password.trim()) ||
+              (authMode === 'signup' && !formData.confirmPassword.trim()) ||
+              (authMode === 'mfa' && !formData.mfaCode.trim()) ||
               (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) ||
               loading
             )
@@ -228,8 +389,10 @@ export default function ProfileScreen() {
           }]}
           onPress={handleAuth}
           disabled={
-            !formData.email.trim() ||
-            (authMode === 'signin' && !formData.password.trim()) ||
+            (authMode !== 'mfa' && !formData.email.trim()) ||
+            ((authMode === 'signin' || authMode === 'signup') && !formData.password.trim()) ||
+            (authMode === 'signup' && !formData.confirmPassword.trim()) ||
+            (authMode === 'mfa' && !formData.mfaCode.trim()) ||
             (authMode === 'forgot_confirm' && (!formData.resetCode.trim() || !formData.newPassword.trim())) ||
             loading
           }
@@ -237,6 +400,8 @@ export default function ProfileScreen() {
           <Text style={styles.authButtonText}>
             {loading && 'Loading...'}
             {!loading && authMode === 'signin' && 'Sign In'}
+            {!loading && authMode === 'signup' && 'Create Account'}
+            {!loading && authMode === 'mfa' && 'Verify Code'}
             {!loading && authMode === 'forgot_request' && 'Send Reset Code'}
             {!loading && authMode === 'forgot_confirm' && 'Reset Password'}
           </Text>
@@ -246,8 +411,24 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={styles.switchModeButton}
             onPress={() => {
+              setAuthMode('signup');
+              setAuthMessage('');
+              setFormData({ ...formData, firstName: '', lastName: '', password: '', confirmPassword: '', mfaCode: '' });
+            }}
+          >
+            <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
+              Need an account? Create one
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {authMode === 'signin' && (
+          <TouchableOpacity
+            style={styles.switchModeButton}
+            onPress={() => {
               setAuthMode('forgot_request');
-              setFormData({ ...formData, resetCode: '', newPassword: '' });
+              setAuthMessage('');
+              setFormData({ ...formData, password: '', confirmPassword: '', mfaCode: '', resetCode: '', newPassword: '' });
             }}
           >
             <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
@@ -256,12 +437,13 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         )}
 
-        {(authMode === 'forgot_request' || authMode === 'forgot_confirm') && (
+        {(authMode === 'signup' || authMode === 'mfa' || authMode === 'forgot_request' || authMode === 'forgot_confirm') && (
           <TouchableOpacity
             style={styles.switchModeButton}
             onPress={() => {
               setAuthMode('signin');
-              setFormData({ ...formData, resetCode: '', newPassword: '' });
+              setAuthMessage('');
+              setFormData({ ...formData, password: '', confirmPassword: '', mfaCode: '', resetCode: '', newPassword: '' });
             }}
           >
             <Text style={[styles.switchModeText, { color: theme.colors.primary }]}>
@@ -272,7 +454,7 @@ export default function ProfileScreen() {
       </View>
 
       <Text style={[styles.authHint, { color: theme.colors.textSecondary }]}>
-        Accounts are invite-only. Scouting lead and drive team roles are assigned by admins.
+        New accounts are created as Viewer. Scouting leads can upgrade users to scouter/drive team/scouting lead.
       </Text>
     </View>
   );
@@ -314,9 +496,57 @@ export default function ProfileScreen() {
           ))}
         </View>
         <Text style={[styles.roleNote, { color: theme.colors.textSecondary }]}>
-          Role is managed by scouting lead / drive team admins.
+          Role is managed by scouting leads.
         </Text>
       </View>
+
+      {currentRole === USER_ROLES.SCOUTING_LEAD && (
+        <View style={[styles.roleSection, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.roleSectionTitle, { color: theme.colors.text }]}>Account Management</Text>
+          <Text style={[styles.roleNote, { color: theme.colors.textSecondary }]}>
+            Upgrade users from Viewer to Scouter, Drive Team, or Scouting Lead.
+          </Text>
+          {accountsLoading ? (
+            <Text style={[styles.roleNote, { color: theme.colors.textSecondary }]}>Loading accounts...</Text>
+          ) : (
+            allAccounts.map((account) => (
+              <View key={account.id} style={[styles.accountRow, { borderColor: theme.colors.border }]}>
+                <View style={styles.accountInfo}>
+                  <Text style={[styles.accountName, { color: theme.colors.text }]}>
+                    {account.name || account.email || account.id}
+                  </Text>
+                  <Text style={[styles.accountMeta, { color: theme.colors.textSecondary }]}>
+                    Current role: {(account.role || USER_ROLES.VIEWER).replace('_', ' ')}
+                  </Text>
+                </View>
+                <View style={styles.accountRoleButtons}>
+                  {upgradableRoleOptions.map((option) => (
+                    <TouchableOpacity
+                      key={`${account.id}-${option.key}`}
+                      style={[
+                        styles.accountRoleButton,
+                        { borderColor: theme.colors.border },
+                        account.role === option.key && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+                      ]}
+                      onPress={() => handleRoleUpgrade(account.id, option.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.accountRoleButtonText,
+                          { color: theme.colors.text },
+                          account.role === option.key && { color: 'white' },
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+      )}
 
       <View style={styles.statsContainer}>
         <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
@@ -734,6 +964,9 @@ const styles = StyleSheet.create({
   },
   authContainer: {
     padding: 20,
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
   },
   authHeader: {
     alignItems: 'center',
@@ -751,6 +984,27 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     marginBottom: 30,
+  },
+  authMessageBox: {
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  authErrorBox: {
+    backgroundColor: '#FDECEC',
+    borderWidth: 1,
+    borderColor: '#F5B5B5',
+  },
+  authSuccessBox: {
+    backgroundColor: '#E9F9EF',
+    borderWidth: 1,
+    borderColor: '#9AD8AE',
+  },
+  authMessageText: {
+    fontSize: 13,
+    color: '#1F2937',
+    fontWeight: '600',
   },
   inputContainer: {
     marginBottom: 20,
@@ -868,6 +1122,39 @@ const styles = StyleSheet.create({
   roleNote: {
     marginTop: 10,
     fontSize: 12,
+    textAlign: 'center',
+  },
+  accountRow: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+  },
+  accountInfo: {
+    marginBottom: 8,
+  },
+  accountName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  accountMeta: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  accountRoleButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  accountRoleButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  accountRoleButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
     textAlign: 'center',
   },
   statsContainer: {
@@ -1033,13 +1320,13 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     maxHeight: '80%',
     borderRadius: 12,
-    padding: 20,
-    paddingRight: 50, 
+    paddingVertical: 20,
+    paddingHorizontal: 18,
     ...platformUtils.getPlatformElevation(5),
   },
   modalScrollView: {
     maxHeight: '100%',
-    paddingRight: 10,
+    width: '100%',
   },
   closeButton: {
     position: 'absolute',

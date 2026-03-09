@@ -207,6 +207,10 @@ export default function SettingsScreen() {
 
   const renderSettingItem = (item) => {
     const isDisabled = item.disabled;
+    const switchTrackOff = theme.colors.border;
+    const switchTrackOn = theme.colors.primary;
+    const switchThumbOff = isDarkMode ? theme.colors.textSecondary : '#FFFFFF';
+    const switchThumbOn = '#FFFFFF';
     
     return (
       <TouchableOpacity
@@ -247,8 +251,10 @@ export default function SettingsScreen() {
                   }
                 }
               }}
-              trackColor={{ false: theme.colors.border, true: theme.colors.accent + '80' }}
-              thumbColor={item.value ? theme.colors.accent : theme.colors.textSecondary}
+              trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+              thumbColor={item.value ? switchThumbOn : switchThumbOff}
+              ios_backgroundColor={switchTrackOff}
+              style={styles.themeSwitch}
               disabled={isDisabled}
             />
           ) : item.type === 'input' ? (
@@ -390,6 +396,9 @@ const styles = StyleSheet.create({
   },
   settingRight: {
     marginLeft: 12,
+  },
+  themeSwitch: {
+    transform: [{ scaleX: 1.05 }, { scaleY: 1.05 }],
   },
   disabledItem: {
     opacity: 0.6,

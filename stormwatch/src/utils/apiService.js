@@ -209,6 +209,17 @@ class ApiService {
       body: JSON.stringify(payload),
     });
   }
+
+  async getClerkUsers() {
+    return this.request('/clerk/users');
+  }
+
+  async updateClerkUserRole(payload) {
+    return this.request('/clerk/users/role', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
 }
 
 const apiService = new ApiService();

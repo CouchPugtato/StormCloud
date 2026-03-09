@@ -103,6 +103,8 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 
 		r.Post("/auth", AuthenticatePassword())
 		r.Get("/app-settings", AppSettingsGet())
+		r.Get("/clerk/users", ClerkUsersList())
+		r.Post("/clerk/users/role", ClerkUserRoleUpdate())
 
 		r.Get("/event-mode", EventModeGet(scheduler))
 		r.Post("/event-mode", EventModeSet(scheduler))

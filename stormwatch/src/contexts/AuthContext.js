@@ -1,17 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAuth as useClerkAuth, useUser, useSignIn } from '@clerk/clerk-expo';
+import { useAuth as useClerkAuth, useUser, useSignIn, useSignUp } from '@clerk/clerk-expo';
+import apiService from '../utils/apiService';
 
 const AuthContext = createContext();
 
 export const USER_ROLES = {
+  VIEWER: 'viewer',
   SCOUTER: 'scouter',
   SCOUTING_LEAD: 'scouting_lead',
   DRIVE_TEAM: 'drive_team',
 };
 
 const VALID_ROLES = new Set(Object.values(USER_ROLES));
-const DEFAULT_USER_ROLE = USER_ROLES.SCOUTER;
+const DEFAULT_USER_ROLE = USER_ROLES.VIEWER;
 const PROFILES_STORAGE_KEY = 'stormwatch_profiles';
 
 const defaultStats = {
@@ -218,6 +220,7 @@ export const AuthProvider = ({ children }) => {
   const { isLoaded: clerkLoaded, isSignedIn, signOut: clerkSignOut } = useClerkAuth();
   const { user: clerkUser } = useUser();
   const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
+  const { isLoaded: signUpLoaded, signUp } = useSignUp();
 
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -294,8 +297,33 @@ export const AuthProvider = ({ children }) => {
     syncSignedInUser();
   }, [profilesLoaded, clerkLoaded, isSignedIn, clerkUser, users, saveUsers]);
 
-  const createAccount = async () => {
-    throw new Error('Account creation is invite-only. Ask a scouting lead or drive team admin to create your account in Clerk.');
+  const createAccount = async (email, password, firstName, lastName) => {
+    if (!signUpLoaded) {
+      throw new Error('Authentication is still loading. Please try again.');
+    }
+    if (!email.trim() || !password.trim()) {
+      throw new Error('Email and password are required');
+    }
+    if (!firstName.trim() || !lastName.trim()) {
+      throw new Error('First and last name are required');
+    }
+
+    const result = await signUp.create({
+      emailAddress: email.trim(),
+      password,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      unsafeMetadata: {
+        role: DEFAULT_USER_ROLE,
+      },
+    });
+
+    if (result.status === 'complete') {
+      await setActive({ session: result.createdSessionId });
+      return;
+    }
+
+    throw new Error('Account created but requires verification in Clerk settings. Complete verification, then sign in.');
   };
 
   const signInWithPassword = async (email, password) => {
@@ -307,9 +335,54 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Email and password are required');
     }
 
-    const result = await signIn.create({
+    await signIn.create({
       identifier: email.trim(),
+    });
+
+    const result = await signIn.attemptFirstFactor({
+      strategy: 'password',
       password,
+    });
+
+    if (result.status === 'complete') {
+      await setActive({ session: result.createdSessionId });
+      return { status: 'complete' };
+    }
+
+    if (result.status === 'needs_second_factor') {
+      return { status: 'needs_second_factor' };
+    }
+
+    throw new Error(`Unable to sign in. Clerk status: ${result.status}`);
+  };
+
+  const completeSecondFactor = async (code) => {
+    if (!signInLoaded) {
+      throw new Error('Authentication is still loading. Please try again.');
+    }
+    if (!code || !code.trim()) {
+      throw new Error('MFA code is required');
+    }
+
+    const availableFactors = signIn?.supportedSecondFactors || [];
+    const preferredStrategies = ['totp', 'phone_code', 'backup_code'];
+    let selectedStrategy = '';
+    for (const strategy of preferredStrategies) {
+      if (availableFactors.some((factor) => factor.strategy === strategy)) {
+        selectedStrategy = strategy;
+        break;
+      }
+    }
+    if (!selectedStrategy && availableFactors.length > 0) {
+      selectedStrategy = availableFactors[0].strategy;
+    }
+    if (!selectedStrategy) {
+      throw new Error('No supported MFA strategy found for this account.');
+    }
+
+    const result = await signIn.attemptSecondFactor({
+      strategy: selectedStrategy,
+      code: code.trim(),
     });
 
     if (result.status === 'complete') {
@@ -317,7 +390,7 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    throw new Error('Unable to sign in. Check your credentials and try again.');
+    throw new Error(`Unable to complete MFA. Clerk status: ${result.status}`);
   };
 
   const startPasswordReset = async (email) => {
@@ -367,8 +440,31 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const updateUserRole = async () => {
-    throw new Error('Role changes are admin-only and must be done from Clerk Dashboard/Backend.');
+  const updateUserRole = async (targetUserID, targetRole) => {
+    if (!user) {
+      throw new Error('You must be signed in.');
+    }
+    if (user.role !== USER_ROLES.SCOUTING_LEAD) {
+      throw new Error('Only scouting leads can change account roles.');
+    }
+    if (!targetUserID || !VALID_ROLES.has(targetRole)) {
+      throw new Error('Invalid role update request.');
+    }
+
+    await apiService.updateClerkUserRole({
+      requester_id: user.id,
+      target_user_id: targetUserID,
+      target_role: targetRole,
+    });
+
+    const updatedUsers = users.map((profile) =>
+      profile.id === targetUserID ? normalizeUser({ ...profile, role: targetRole }) : profile
+    );
+    await saveUsers(updatedUsers);
+
+    if (user.id === targetUserID) {
+      setUser((prev) => (prev ? normalizeUser({ ...prev, role: targetRole }) : prev));
+    }
   };
 
   const updateUserStats = async (matchData) => {
@@ -444,6 +540,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     createAccount,
     signIn: signInWithPassword,
+    completeSecondFactor,
     startPasswordReset,
     completePasswordReset,
     signOut,
