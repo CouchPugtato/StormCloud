@@ -14,6 +14,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 import apiService from '../utils/apiService';
 
 const LIST_TYPE = {
@@ -63,6 +64,7 @@ const mapItemsFromServer = (items = []) => {
 
 export default function PickListScreen() {
   const { theme } = useTheme();
+  const { user } = useAuth();
 
   const [activeListType, setActiveListType] = useState(LIST_TYPE.FIRST);
   const [lists, setLists] = useState(EMPTY_LISTS);
@@ -82,6 +84,7 @@ export default function PickListScreen() {
   const currentNotes = teamNotes[activeListType];
   const currentUnsavedNotes = unsavedNotes[activeListType];
   const currentStruck = struckThroughTeams[activeListType];
+  const canViewPickList = user?.role && user.role !== USER_ROLES.VIEWER;
 
   const persistList = async (listType, listData, notesData, struckData) => {
     try {
@@ -474,97 +477,110 @@ export default function PickListScreen() {
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar style={theme.colors.statusBar} />
 
-      <FlatList
-        data={currentList}
-        keyExtractor={(item) => `${activeListType}-${item.id}`}
-        renderItem={renderPickListItem}
-        ListHeaderComponent={renderHeader}
-        ListEmptyComponent={renderEmptyState}
-        contentContainerStyle={styles.contentContainer}
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      />
-
-      <Modal
-        visible={showAddModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
-          <View style={[styles.modalHeader, { backgroundColor: theme.colors.surface }]}> 
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Add Teams to {listTitle(activeListType)}</Text>
-            <TouchableOpacity
-              style={styles.modalCloseButton}
-              onPress={() => {
-                setShowAddModal(false);
-                setSearchQuery('');
-                setSearchResults([]);
-                setError(null);
-                setSearching(false);
-              }}
-            >
-              <Ionicons name="close" size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.searchContainer}>
-            <View style={[styles.searchInputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}> 
-              <Ionicons name="search" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
-              <TextInput
-                style={[styles.searchInput, { color: theme.colors.text }]}
-                placeholder="Search teams by name or number..."
-                placeholderTextColor={theme.colors.textSecondary}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoFocus
-                selectionColor={theme.colors.textSecondary}
-              />
-            </View>
-          </View>
-
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading teams...</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={filteredTeams}
-              keyExtractor={(item) => String(item.team_num || item.id)}
-              style={styles.teamsList}
-              renderItem={renderTeamSearchItem}
-              ListEmptyComponent={
-                <View style={styles.emptySearchState}>
-                  {searching ? (
-                    <>
-                      <ActivityIndicator size="large" color={theme.colors.primary} />
-                      <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>Searching...</Text>
-                    </>
-                  ) : error ? (
-                    <>
-                      <Ionicons name="alert-circle-outline" size={48} color={theme.colors.textSecondary} />
-                      <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>{error}</Text>
-                      <TouchableOpacity
-                        style={[styles.retryButton, { backgroundColor: theme.colors.primary }]}
-                        onPress={() => (searchQuery.trim() !== '' ? null : fetchTeams())}
-                      >
-                        <Text style={styles.retryButtonText}>Retry</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <Ionicons name="search-outline" size={48} color={theme.colors.textSecondary} />
-                      <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>
-                        {searchQuery ? 'No teams found matching your search' : 'Start typing to search for teams'}
-                      </Text>
-                    </>
-                  )}
-                </View>
-              }
-            />
-          )}
+      {!canViewPickList ? (
+        <View style={[styles.restrictedState, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Ionicons name="lock-closed-outline" size={56} color={theme.colors.textSecondary} />
+          <Text style={[styles.restrictedTitle, { color: theme.colors.text }]}>Pick List unavailable</Text>
+          <Text style={[styles.restrictedText, { color: theme.colors.textSecondary }]}>
+            Viewers cannot access the pick list. A scouting lead can upgrade your account when needed.
+          </Text>
         </View>
-      </Modal>
+      ) : (
+        <>
+
+          <FlatList
+            data={currentList}
+            keyExtractor={(item) => `${activeListType}-${item.id}`}
+            renderItem={renderPickListItem}
+            ListHeaderComponent={renderHeader}
+            ListEmptyComponent={renderEmptyState}
+            contentContainerStyle={styles.contentContainer}
+            style={styles.content}
+            showsVerticalScrollIndicator={false}
+          />
+
+          <Modal
+            visible={showAddModal}
+            animationType="slide"
+            presentationStyle="pageSheet"
+          >
+            <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+              <View style={[styles.modalHeader, { backgroundColor: theme.colors.surface }]}> 
+                <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Add Teams to {listTitle(activeListType)}</Text>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => {
+                    setShowAddModal(false);
+                    setSearchQuery('');
+                    setSearchResults([]);
+                    setError(null);
+                    setSearching(false);
+                  }}
+                >
+                  <Ionicons name="close" size={24} color={theme.colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.searchContainer}>
+                <View style={[styles.searchInputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}> 
+                  <Ionicons name="search" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
+                  <TextInput
+                    style={[styles.searchInput, { color: theme.colors.text }]}
+                    placeholder="Search teams by name or number..."
+                    placeholderTextColor={theme.colors.textSecondary}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoFocus
+                    selectionColor={theme.colors.textSecondary}
+                  />
+                </View>
+              </View>
+
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                  <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading teams...</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredTeams}
+                  keyExtractor={(item) => String(item.team_num || item.id)}
+                  style={styles.teamsList}
+                  renderItem={renderTeamSearchItem}
+                  ListEmptyComponent={
+                    <View style={styles.emptySearchState}>
+                      {searching ? (
+                        <>
+                          <ActivityIndicator size="large" color={theme.colors.primary} />
+                          <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>Searching...</Text>
+                        </>
+                      ) : error ? (
+                        <>
+                          <Ionicons name="alert-circle-outline" size={48} color={theme.colors.textSecondary} />
+                          <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>{error}</Text>
+                          <TouchableOpacity
+                            style={[styles.retryButton, { backgroundColor: theme.colors.primary }]}
+                            onPress={() => (searchQuery.trim() !== '' ? null : fetchTeams())}
+                          >
+                            <Text style={styles.retryButtonText}>Retry</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="search-outline" size={48} color={theme.colors.textSecondary} />
+                          <Text style={[styles.emptySearchText, { color: theme.colors.textSecondary }]}>
+                            {searchQuery ? 'No teams found matching your search' : 'Start typing to search for teams'}
+                          </Text>
+                        </>
+                      )}
+                    </View>
+                  }
+                />
+              )}
+            </View>
+          </Modal>
+        </>
+      )}
     </View>
   );
 }
@@ -634,6 +650,26 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingBottom: 20,
+  },
+  restrictedState: {
+    margin: 20,
+    padding: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  restrictedTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  restrictedText: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginTop: 10,
+    textAlign: 'center',
   },
   emptyState: {
     flex: 1,

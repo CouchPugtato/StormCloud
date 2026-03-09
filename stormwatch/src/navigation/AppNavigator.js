@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 
 import HomeScreen from '../screens/HomeScreen';
 import TeamsScreen from '../screens/TeamsScreen';
@@ -68,6 +69,8 @@ function TeamsStack() {
 
 function TabNavigator() {
   const { theme, isDarkMode } = useTheme();
+  const { user } = useAuth();
+  const canViewPickList = user?.role && user.role !== USER_ROLES.VIEWER;
   
   return (
     <Tab.Navigator
@@ -104,7 +107,9 @@ function TabNavigator() {
       <Tab.Screen name="Home" component={HomeStack} />
       <Tab.Screen name="Teams" component={TeamsStack} />
       {/* <Tab.Screen name="Comms" component={CommsScreen} /> */}
-      <Tab.Screen name="PickList" component={PickListScreen} options={{ title: 'Pick List' }} />
+      {canViewPickList && (
+        <Tab.Screen name="PickList" component={PickListScreen} options={{ title: 'Pick List' }} />
+      )}
       <Tab.Screen name="Profile" component={ProfileScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
