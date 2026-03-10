@@ -281,18 +281,16 @@ export default function HomeScreen({ navigation }) {
       const isScoutTeam = userScoutTeam && parseInt(userScoutTeam) === teamNumber;
       
       return (
-        <TouchableOpacity onPress={() => navigateToScoutingForm(teamNumber, item)}>
-          <Text 
-            style={[
-              styles.tableTeamText,
-              { color: theme.colors.text },
-              isTeam509 && styles.team509Text,
-              isScoutTeam && styles.scoutTeamText,
-            ]}
-          >
-            {teamNumber}
-          </Text>
-        </TouchableOpacity>
+        <Text 
+          style={[
+            styles.tableTeamText,
+            { color: theme.colors.text },
+            isTeam509 && styles.team509Text,
+            isScoutTeam && styles.scoutTeamText,
+          ]}
+        >
+          {teamNumber}
+        </Text>
       );
     };
 
@@ -384,9 +382,11 @@ export default function HomeScreen({ navigation }) {
                     
                     return (
                       <View key={index} style={styles.teamEpaRow}>
-                        <Text style={[styles.teamEpaNumber, { color: '#FFFFFF' }]}>
-                          {team}
-                        </Text>
+                        <TouchableOpacity onPress={() => navigateToScoutingForm(team, item)}>
+                          <Text style={[styles.teamEpaNumber, styles.clickableTeamEpaNumber, { color: '#FFFFFF' }]}>
+                            {team}
+                          </Text>
+                        </TouchableOpacity>
                         <Text style={[styles.teamEpaValue, { color: '#FFE6E6' }]}>
                           EPA: {formatEPA(teamEPA)}
                         </Text>
@@ -421,9 +421,11 @@ export default function HomeScreen({ navigation }) {
                     
                     return (
                       <View key={index} style={styles.teamEpaRow}>
-                        <Text style={[styles.teamEpaNumber, { color: '#FFFFFF' }]}>
-                          {team}
-                        </Text>
+                        <TouchableOpacity onPress={() => navigateToScoutingForm(team, item)}>
+                          <Text style={[styles.teamEpaNumber, styles.clickableTeamEpaNumber, { color: '#FFFFFF' }]}>
+                            {team}
+                          </Text>
+                        </TouchableOpacity>
                         <Text style={[styles.teamEpaValue, { color: '#E6E6FF' }]}>
                           EPA: {formatEPA(teamEPA)}
                         </Text>
@@ -1028,6 +1030,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 2,
+  },
+  clickableTeamEpaNumber: {
+    fontWeight: '800',
   },
   teamEpaValue: {
     fontSize: 12,
