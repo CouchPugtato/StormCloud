@@ -497,11 +497,67 @@ func AuthenticatePassword() http.HandlerFunc {
 
 // --- APP SETTINGS
 func AppSettingsGet() http.HandlerFunc {
+	return AppSettingsGetWithDB(nil)
+}
+
+func AppSettingsGetWithDB(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		twitchURL := strings.TrimSpace(os.Getenv("TWITCH_CHANNEL_URL"))
+		if db != nil {
+			var storedURL string
+			err := db.QueryRow(`SELECT value FROM app_settings WHERE key=?`, "twitch_channel_url").Scan(&storedURL)
+			if err == nil {
+				twitchURL = storedURL
+			} else if err != nil && err != sql.ErrNoRows {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+
 		settings := map[string]string{
-			"twitch_channel_url": os.Getenv("TWITCH_CHANNEL_URL"),
+			"twitch_channel_url": twitchURL,
 		}
 		writeJSON(w, 200, settings)
+	}
+}
+
+func AppSettingsSet(db *sql.DB) http.HandlerFunc {
+	type in struct {
+		TwitchChannelURL string `json:"twitch_channel_url"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+
+		twitchURL := strings.TrimSpace(payload.TwitchChannelURL)
+		_, err = db.Exec(`
+			INSERT INTO app_settings(key, value, updated_at)
+			VALUES(?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+		`, "twitch_channel_url", twitchURL, time.Now().Unix())
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"ok":                 true,
+			"twitch_channel_url": twitchURL,
+		})
 	}
 }
 

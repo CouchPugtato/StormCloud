@@ -249,6 +249,17 @@ class ApiService {
     });
   }
 
+  async getAppSettings() {
+    return this.request('/app-settings');
+  }
+
+  async updateAppSettings(payload) {
+    return this.request('/app-settings', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getUsers() {
     return this.request('/users');
   }
