@@ -16,6 +16,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useEventMode } from '../contexts/EventModeContext';
@@ -40,170 +41,198 @@ export default function HomeScreen({ navigation }) {
   const [epaData, setEpaData] = useState({});
   const [winProbabilities, setWinProbabilities] = useState({});
   const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
+  const [currentMatches, setCurrentMatches] = useState([]);
+
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      const eventsData = await apiService.getEvents();
+      const transformedEvents = eventsData.map(event => ({
+        key: event.event_key,
+        name: event.name,
+      }));
+      setEvents(transformedEvents);
+
+      if (transformedEvents.length === 0) {
+        setSelectedEvent(null);
+        setCurrentMatches([]);
+        setEpaData({});
+        setWinProbabilities({});
+        return;
+      }
+
+      const activeEventStillExists = transformedEvents.some((event) => event.key === selectedEvent);
+      const nextEventKey = activeEventStillExists ? selectedEvent : transformedEvents[0].key;
+      if (nextEventKey !== selectedEvent) {
+        setSelectedEvent(nextEventKey);
+      } else {
+        await fetchMatchesForEvent(nextEventKey);
+      }
+    } catch (error) {
+      console.error('Failed to fetch events:', error);
+      Alert.alert('Error', 'Failed to load events. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMatchesForEvent = async (eventKey) => {
+    if (!eventKey) {
+      setCurrentMatches([]);
+      setEpaData({});
+      setWinProbabilities({});
+      return;
+    }
+
+    try {
+      setMatchesLoading(true);
+      setCurrentMatches([]);
+      setEpaData({});
+      setWinProbabilities({});
+      const matchesData = await apiService.getEventMatches(eventKey);
+
+      const getCompLevelRank = (level) => {
+        switch ((level || '').toLowerCase()) {
+          case 'qm':
+            return 1;
+          case 'ef':
+            return 2;
+          case 'qf':
+            return 3;
+          case 'sf':
+            return 4;
+          case 'f':
+            return 99; // force finals to bottom
+          default:
+            return 50;
+        }
+      };
+
+      const usesDoubleElimination = matchesData.some((match) => {
+        const level = (match.comp_level || '').toLowerCase();
+        const setNum = Number(match.set_number || 0);
+        return level === 'sf' && setNum > 2;
+      });
+
+      const getMatchDisplayLabel = (match) => {
+        const level = (match.comp_level || '').toLowerCase();
+        const setNum = Number(match.set_number || 0);
+        const matchNum = Number(match.match_number || 0);
+
+        if (level === 'qm') {
+          return `Quals ${matchNum}`;
+        }
+        if (level === 'sf') {
+          if (usesDoubleElimination) {
+            return `Round ${setNum}`;
+          }
+          return `Semis ${setNum}`;
+        }
+        if (level === 'qf') {
+          return `QF${setNum}`;
+        }
+        if (level === 'f') {
+          return `Finals ${matchNum}`;
+        }
+        if (level === 'ef') {
+          return `EF${setNum}`;
+        }
+        return `${(match.comp_level || '').toUpperCase()} ${matchNum}`;
+      };
+
+      const getSortTime = (m) => Number(m.time_real || m.time_pred || 0);
+
+      const sortedMatches = [...matchesData].sort((a, b) => {
+        const rankA = getCompLevelRank(a.comp_level);
+        const rankB = getCompLevelRank(b.comp_level);
+        if (rankA !== rankB) return rankA - rankB;
+
+        const timeA = getSortTime(a);
+        const timeB = getSortTime(b);
+        if (timeA !== 0 && timeB !== 0 && timeA !== timeB) {
+          return timeA - timeB;
+        }
+
+        const setA = Number(a.set_number || 0);
+        const setB = Number(b.set_number || 0);
+        if (setA !== setB) return setA - setB;
+
+        const matchA = Number(a.match_number || 0);
+        const matchB = Number(b.match_number || 0);
+        return matchA - matchB;
+      });
+
+      const transformedMatches = sortedMatches.map((match, index) => ({
+        id: index + 1,
+        matchNumber: getMatchDisplayLabel(match),
+        matchKey: match.match_key,
+        redAlliance: match.red_teams.map(team => parseInt(team.replace('frc', ''))),
+        blueAlliance: match.blue_teams.map(team => parseInt(team.replace('frc', ''))),
+        scoutAssignments: {},
+        redScore: match.red_score,
+        blueScore: match.blue_score,
+        status: match.red_score !== null && match.blue_score !== null ? 'completed' : 'upcoming',
+        time: match.time_real ? new Date(match.time_real * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD',
+      }));
+
+      setCurrentMatches(transformedMatches);
+
+      const allTeamKeys = new Set();
+      transformedMatches.forEach(match => {
+        match.redAlliance.forEach(team => allTeamKeys.add(`frc${team}`));
+        match.blueAlliance.forEach(team => allTeamKeys.add(`frc${team}`));
+      });
+
+      const teamKeysArray = Array.from(allTeamKeys);
+      const epaResults = await apiService.getTeamsEPA(teamKeysArray);
+      setEpaData(epaResults);
+
+      const matchProbabilities = {};
+      transformedMatches.forEach(match => {
+        const redTotalEPA = match.redAlliance.reduce((sum, team) => {
+          const teamEPA = epaResults[`frc${team}`] || 0;
+          return sum + (typeof teamEPA === 'number' ? teamEPA : 0);
+        }, 0);
+
+        const blueTotalEPA = match.blueAlliance.reduce((sum, team) => {
+          const teamEPA = epaResults[`frc${team}`] || 0;
+          return sum + (typeof teamEPA === 'number' ? teamEPA : 0);
+        }, 0);
+
+        const redWinProb = calculateWinProbability(redTotalEPA, blueTotalEPA);
+        const blueWinProb = 100 - redWinProb;
+
+        matchProbabilities[match.matchKey] = {
+          red: redWinProb,
+          blue: blueWinProb,
+        };
+      });
+
+      setWinProbabilities(matchProbabilities);
+    } catch (error) {
+      console.error('Failed to fetch matches:', error);
+      Alert.alert('Error', 'Failed to load matches. Please try again.');
+    } finally {
+      setMatchesLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchEvents = async () => {
-      try {
-        setLoading(true);
-        const eventsData = await apiService.getEvents();
-        const transformedEvents = eventsData.map(event => ({
-          key: event.event_key,
-          name: event.name
-        }));
-        setEvents(transformedEvents);
-        
-        if (transformedEvents.length > 0) {
-          setSelectedEvent(transformedEvents[0].key);
-        }
-      } catch (error) {
-        console.error('Failed to fetch events:', error);
-        Alert.alert('Error', 'Failed to load events. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchEvents();
   }, []);
 
-  const [currentMatches, setCurrentMatches] = useState([]);
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchEvents();
+    }, [selectedEvent])
+  );
 
   useEffect(() => {
-    const fetchMatches = async () => {
-      if (!selectedEvent) return;
-      
-      try {
-        setMatchesLoading(true);
-        const matchesData = await apiService.getEventMatches(selectedEvent);
-
-        const getCompLevelRank = (level) => {
-          switch ((level || '').toLowerCase()) {
-            case 'qm':
-              return 1;
-            case 'ef':
-              return 2;
-            case 'qf':
-              return 3;
-            case 'sf':
-              return 4;
-            case 'f':
-              return 99; // force finals to bottom
-            default:
-              return 50;
-          }
-        };
-
-        const usesDoubleElimination = matchesData.some((match) => {
-          const level = (match.comp_level || '').toLowerCase();
-          const setNum = Number(match.set_number || 0);
-          return level === 'sf' && setNum > 2;
-        });
-
-        const getMatchDisplayLabel = (match) => {
-          const level = (match.comp_level || '').toLowerCase();
-          const setNum = Number(match.set_number || 0);
-          const matchNum = Number(match.match_number || 0);
-
-          if (level === 'qm') {
-            return `Quals ${matchNum}`;
-          }
-          if (level === 'sf') {
-            if (usesDoubleElimination) {
-              return `Round ${setNum}`;
-            }
-            return `Semis ${setNum}`;
-          }
-          if (level === 'qf') {
-            return `QF${setNum}`;
-          }
-          if (level === 'f') {
-            return `Finals ${matchNum}`;
-          }
-          if (level === 'ef') {
-            return `EF${setNum}`;
-          }
-          return `${(match.comp_level || '').toUpperCase()} ${matchNum}`;
-        };
-
-        const getSortTime = (m) => Number(m.time_real || m.time_pred || 0);
-
-        const sortedMatches = [...matchesData].sort((a, b) => {
-          const rankA = getCompLevelRank(a.comp_level);
-          const rankB = getCompLevelRank(b.comp_level);
-          if (rankA !== rankB) return rankA - rankB;
-
-          const timeA = getSortTime(a);
-          const timeB = getSortTime(b);
-          if (timeA !== 0 && timeB !== 0 && timeA !== timeB) {
-            return timeA - timeB;
-          }
-
-          const setA = Number(a.set_number || 0);
-          const setB = Number(b.set_number || 0);
-          if (setA !== setB) return setA - setB;
-
-          const matchA = Number(a.match_number || 0);
-          const matchB = Number(b.match_number || 0);
-          return matchA - matchB;
-        });
-        
-        const transformedMatches = sortedMatches.map((match, index) => ({
-          id: index + 1,
-          matchNumber: getMatchDisplayLabel(match),
-          matchKey: match.match_key,
-          redAlliance: match.red_teams.map(team => parseInt(team.replace('frc', ''))),
-          blueAlliance: match.blue_teams.map(team => parseInt(team.replace('frc', ''))),
-          scoutAssignments: {}, // TODO: implement scout assignments from backend
-          redScore: match.red_score,
-          blueScore: match.blue_score,
-          status: match.red_score !== null && match.blue_score !== null ? 'completed' : 'upcoming',
-          time: match.time_real ? new Date(match.time_real * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD',
-        }));
-        
-        setCurrentMatches(transformedMatches);
-        
-        const allTeamKeys = new Set();
-        transformedMatches.forEach(match => {
-          match.redAlliance.forEach(team => allTeamKeys.add(`frc${team}`));
-          match.blueAlliance.forEach(team => allTeamKeys.add(`frc${team}`));
-        });
-        
-        const teamKeysArray = Array.from(allTeamKeys);
-        const epaResults = await apiService.getTeamsEPA(teamKeysArray);
-        setEpaData(epaResults);
-        
-        const matchProbabilities = {};
-        transformedMatches.forEach(match => {
-          const redTotalEPA = match.redAlliance.reduce((sum, team) => {
-            const teamEPA = epaResults[`frc${team}`] || 0;
-            return sum + (typeof teamEPA === 'number' ? teamEPA : 0);
-          }, 0);
-          
-          const blueTotalEPA = match.blueAlliance.reduce((sum, team) => {
-            const teamEPA = epaResults[`frc${team}`] || 0;
-            return sum + (typeof teamEPA === 'number' ? teamEPA : 0);
-          }, 0);
-          
-          const redWinProb = calculateWinProbability(redTotalEPA, blueTotalEPA);
-          const blueWinProb = 100 - redWinProb;
-          
-          matchProbabilities[match.matchKey] = {
-            red: redWinProb,
-            blue: blueWinProb
-          };
-        });
-        
-        setWinProbabilities(matchProbabilities);
-      } catch (error) {
-        console.error('Failed to fetch matches:', error);
-        Alert.alert('Error', 'Failed to load matches. Please try again.');
-      } finally {
-        setMatchesLoading(false);
-      }
-    };
-
-    fetchMatches();
-  }, [selectedEvent]);
+    if (!selectedEvent || loading) {
+      return;
+    }
+    fetchMatchesForEvent(selectedEvent);
+  }, [selectedEvent, loading]);
 
   // handle match expansion for notes
   const toggleMatchExpansion = (matchId) => {
@@ -561,6 +590,12 @@ export default function HomeScreen({ navigation }) {
       </View>
 
        <View style={styles.matchesSection}>
+        {matchesLoading && (
+          <View style={[styles.inlineLoadingRow, { borderBottomColor: theme.colors.border }]}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text style={[styles.inlineLoadingText, { color: theme.colors.textSecondary }]}>Loading matches...</Text>
+          </View>
+        )}
         <View style={[styles.tableHeader, { backgroundColor: theme.colors.surface }]}>
           <View style={styles.matchColumn}>
             <Text style={[styles.tableHeaderText, { color: theme.colors.text }]}>Match</Text>
@@ -601,23 +636,16 @@ export default function HomeScreen({ navigation }) {
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar style={theme.colors.statusBar} />
-      
-      {matchesLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={[styles.loadingText, { color: theme.colors.text }]}>Loading matches...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={currentMatches}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderMatch}
-          ListHeaderComponent={renderHeader}
-          showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={() => <View style={styles.tableSeparator} />}
-          contentContainerStyle={styles.contentContainer}
-        />
-      )}
+
+      <FlatList
+        data={currentMatches}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={renderMatch}
+        ListHeaderComponent={renderHeader}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={styles.tableSeparator} />}
+        contentContainerStyle={styles.contentContainer}
+      />
     </View>
   );
 }
@@ -883,15 +911,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  inlineLoadingRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 50,
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
+  inlineLoadingText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   epaSection: {
     marginBottom: 16,

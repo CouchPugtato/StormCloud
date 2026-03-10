@@ -643,12 +643,13 @@ func ManagedEventAddManualMatch(db *sql.DB) http.HandlerFunc {
 		defer func() { _ = tx.Rollback() }()
 
 		for _, teamNum := range append(append([]int{}, payload.RedTeams...), payload.BlueTeams...) {
-			teamKey := fmt.Sprintf("frc%d", teamNum)
-			if _, err := tx.Exec(`
-				INSERT OR IGNORE INTO teams(team_key, team_num, name, last_synced)
-				VALUES(?,?,?,?)
-			`, teamKey, teamNum, fmt.Sprintf("Team %d", teamNum), time.Now().Unix()); err != nil {
+			var exists int
+			if err := tx.QueryRow(`SELECT COUNT(1) FROM teams WHERE team_num=?`, teamNum).Scan(&exists); err != nil {
 				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if exists == 0 {
+				writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("team %d is not in the local database", teamNum)})
 				return
 			}
 		}
@@ -898,16 +899,32 @@ func EventMatches(db *sql.DB) http.HandlerFunc {
 			BlueScore   *int     `json:"blue_score"`
 			RedScore    *int     `json:"red_score"`
 		}
-		var out []Match
+		out := make([]Match, 0)
 		for rows.Next() {
 			var m Match
 			var blueJSON, redJSON string
+			var timeReal, timePred sql.NullInt64
 			var blueScore, redScore sql.NullInt64
-			_ = rows.Scan(&m.MatchKey, &m.CompLevel, &m.SetNumber, &m.MatchNumber,
-				&m.TimeReal, &m.TimePred, &blueJSON, &redJSON, &blueScore, &redScore)
+			if err := rows.Scan(&m.MatchKey, &m.CompLevel, &m.SetNumber, &m.MatchNumber,
+				&timeReal, &timePred, &blueJSON, &redJSON, &blueScore, &redScore); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
 
-			json.Unmarshal([]byte(blueJSON), &m.BlueTeams)
-			json.Unmarshal([]byte(redJSON), &m.RedTeams)
+			if timeReal.Valid {
+				m.TimeReal = timeReal.Int64
+			}
+			if timePred.Valid {
+				m.TimePred = timePred.Int64
+			}
+			if err := json.Unmarshal([]byte(blueJSON), &m.BlueTeams); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if err := json.Unmarshal([]byte(redJSON), &m.RedTeams); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
 			if blueScore.Valid && blueScore.Int64 >= 0 {
 				v := int(blueScore.Int64)
 				m.BlueScore = &v

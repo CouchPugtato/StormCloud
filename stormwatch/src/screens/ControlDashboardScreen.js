@@ -34,8 +34,12 @@ export default function ControlDashboardScreen() {
   const [addingEvent, setAddingEvent] = useState(false);
   const [addingMatch, setAddingMatch] = useState(false);
   const [selectedMatchEvent, setSelectedMatchEvent] = useState(null);
+  const [manualMatchStatus, setManualMatchStatus] = useState(null);
   const [syncingEventKey, setSyncingEventKey] = useState('');
   const [deletingEventKey, setDeletingEventKey] = useState('');
+  const [teamCatalog, setTeamCatalog] = useState([]);
+  const [teamCatalogLoading, setTeamCatalogLoading] = useState(false);
+  const [activeTeamField, setActiveTeamField] = useState(null);
   const [eventModeForm, setEventModeForm] = useState('tba');
   const [tbaEventKey, setTbaEventKey] = useState('');
   const [manualEventForm, setManualEventForm] = useState({
@@ -50,16 +54,25 @@ export default function ControlDashboardScreen() {
   });
   const [manualMatchForm, setManualMatchForm] = useState({
     comp_level: 'qm',
-    set_number: '1',
-    match_number: '',
+    number: '',
+    red_score: '',
+    blue_score: '',
+  });
+  const [manualMatchTeamQueries, setManualMatchTeamQueries] = useState({
     red1: '',
     red2: '',
     red3: '',
     blue1: '',
     blue2: '',
     blue3: '',
-    red_score: '',
-    blue_score: '',
+  });
+  const [manualMatchTeamSelections, setManualMatchTeamSelections] = useState({
+    red1: null,
+    red2: null,
+    red3: null,
+    blue1: null,
+    blue2: null,
+    blue3: null,
   });
 
   const upgradableRoleOptions = [
@@ -178,17 +191,46 @@ export default function ControlDashboardScreen() {
   const resetManualMatchForm = () => {
     setManualMatchForm({
       comp_level: 'qm',
-      set_number: '1',
-      match_number: '',
+      number: '',
+      red_score: '',
+      blue_score: '',
+    });
+    setManualMatchTeamQueries({
       red1: '',
       red2: '',
       red3: '',
       blue1: '',
       blue2: '',
       blue3: '',
-      red_score: '',
-      blue_score: '',
     });
+    setManualMatchTeamSelections({
+      red1: null,
+      red2: null,
+      red3: null,
+      blue1: null,
+      blue2: null,
+      blue3: null,
+    });
+    setActiveTeamField(null);
+  };
+
+  const ensureTeamCatalogLoaded = async () => {
+    if (teamCatalogLoading || teamCatalog.length > 0) {
+      return;
+    }
+
+    setTeamCatalogLoading(true);
+    try {
+      const teams = await apiService.getAllTeams();
+      setTeamCatalog(teams || []);
+    } catch (error) {
+      setManualMatchStatus({
+        type: 'error',
+        message: 'Unable to load teams from the database.',
+      });
+    } finally {
+      setTeamCatalogLoading(false);
+    }
   };
 
   const handleAddManagedEvent = async () => {
@@ -257,6 +299,8 @@ export default function ControlDashboardScreen() {
   const openMatchModal = (event) => {
     setSelectedMatchEvent(event);
     resetManualMatchForm();
+    setManualMatchStatus(null);
+    ensureTeamCatalogLoaded();
   };
 
   const handleAddManualMatch = async () => {
@@ -264,21 +308,32 @@ export default function ControlDashboardScreen() {
       return;
     }
 
-    const parseTeam = (value) => Number(String(value).trim());
-    const redTeams = [manualMatchForm.red1, manualMatchForm.red2, manualMatchForm.red3].map(parseTeam);
-    const blueTeams = [manualMatchForm.blue1, manualMatchForm.blue2, manualMatchForm.blue3].map(parseTeam);
-    const matchNumber = Number(manualMatchForm.match_number);
-    const setNumber = Number(manualMatchForm.set_number || 0);
+    const redTeams = ['red1', 'red2', 'red3'].map((field) => manualMatchTeamSelections[field]?.team_num);
+    const blueTeams = ['blue1', 'blue2', 'blue3'].map((field) => manualMatchTeamSelections[field]?.team_num);
+    const numberValue = Number(manualMatchForm.number);
+    const isPlayoffs = manualMatchForm.comp_level === 'sf';
+    const matchNumber = isPlayoffs ? 1 : numberValue;
+    const setNumber = isPlayoffs ? numberValue : 1;
 
     if (
-      !Number.isInteger(matchNumber) ||
-      matchNumber <= 0 ||
-      !Number.isInteger(setNumber) ||
-      setNumber < 0 ||
+      !Number.isInteger(numberValue) ||
+      numberValue <= 0 ||
       redTeams.some((teamNum) => !Number.isInteger(teamNum) || teamNum <= 0) ||
       blueTeams.some((teamNum) => !Number.isInteger(teamNum) || teamNum <= 0)
     ) {
-      Alert.alert('Error', 'Enter a valid match number, series number, and six valid team numbers.');
+      setManualMatchStatus({
+        type: 'error',
+        message: 'Select six teams from the database and enter a valid match number.',
+      });
+      return;
+    }
+
+    const uniqueTeams = new Set([...redTeams, ...blueTeams]);
+    if (uniqueTeams.size !== 6) {
+      setManualMatchStatus({
+        type: 'error',
+        message: 'Each alliance slot must use a different team.',
+      });
       return;
     }
 
@@ -286,13 +341,20 @@ export default function ControlDashboardScreen() {
       (manualMatchForm.red_score.trim() !== '' && Number.isNaN(Number(manualMatchForm.red_score))) ||
       (manualMatchForm.blue_score.trim() !== '' && Number.isNaN(Number(manualMatchForm.blue_score)))
     ) {
-      Alert.alert('Error', 'Scores must be blank or numeric.');
+      setManualMatchStatus({
+        type: 'error',
+        message: 'Scores must be blank or numeric.',
+      });
       return;
     }
 
     setAddingMatch(true);
+    setManualMatchStatus({
+      type: 'info',
+      message: 'Saving match...',
+    });
     try {
-      await apiService.addManagedEventMatch({
+      const result = await apiService.addManagedEventMatch({
         event_key: selectedMatchEvent.event_key,
         comp_level: manualMatchForm.comp_level,
         set_number: setNumber,
@@ -302,14 +364,119 @@ export default function ControlDashboardScreen() {
         red_score: manualMatchForm.red_score.trim() === '' ? null : Number(manualMatchForm.red_score),
         blue_score: manualMatchForm.blue_score.trim() === '' ? null : Number(manualMatchForm.blue_score),
       });
-      setSelectedMatchEvent(null);
-      resetManualMatchForm();
-      Alert.alert('Success', 'Manual match added.');
+      setManualMatchForm((prev) => ({
+        ...prev,
+        number: String(numberValue + 1),
+        red_score: '',
+        blue_score: '',
+      }));
+      setManualMatchTeamQueries({
+        red1: '',
+        red2: '',
+        red3: '',
+        blue1: '',
+        blue2: '',
+        blue3: '',
+      });
+      setManualMatchTeamSelections({
+        red1: null,
+        red2: null,
+        red3: null,
+        blue1: null,
+        blue2: null,
+        blue3: null,
+      });
+      setActiveTeamField(null);
+      setManualMatchStatus({
+        type: 'success',
+        message: `Saved ${result?.match_key || 'match'} to ${selectedMatchEvent.event_key}.`,
+      });
     } catch (error) {
-      Alert.alert('Error', error.message || 'Unable to add manual match.');
+      setManualMatchStatus({
+        type: 'error',
+        message: error.message || 'Unable to add manual match.',
+      });
     } finally {
       setAddingMatch(false);
     }
+  };
+
+  const getManualMatchSuggestions = (field) => {
+    const query = (manualMatchTeamQueries[field] || '').trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+
+    return teamCatalog
+      .filter((team) => {
+        const teamNum = String(team.team_num || '');
+        const teamName = String(team.name || '').toLowerCase();
+        return teamNum.includes(query) || teamName.includes(query);
+      })
+      .slice(0, 8);
+  };
+
+  const renderManualMatchTeamField = (field, label) => {
+    const suggestions = activeTeamField === field ? getManualMatchSuggestions(field) : [];
+
+    return (
+      <View key={field} style={styles.teamPickerField}>
+        <TextInput
+          style={[
+            styles.modalInput,
+            {
+              backgroundColor: theme.colors.background,
+              borderColor: activeTeamField === field ? theme.colors.primary : theme.colors.border,
+              color: theme.colors.text,
+            },
+          ]}
+          value={manualMatchTeamQueries[field]}
+          onFocus={() => {
+            setActiveTeamField(field);
+            ensureTeamCatalogLoaded();
+          }}
+          onChangeText={(text) => {
+            setManualMatchTeamQueries((prev) => ({ ...prev, [field]: text }));
+            setManualMatchTeamSelections((prev) => ({ ...prev, [field]: null }));
+            setActiveTeamField(field);
+            setManualMatchStatus(null);
+          }}
+          placeholder={label}
+          placeholderTextColor={theme.colors.textSecondary}
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+        {suggestions.length > 0 && (
+          <View style={[styles.teamSuggestionList, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            {suggestions.map((team) => (
+              <TouchableOpacity
+                key={`${field}-${team.team_key}`}
+                style={[
+                  styles.teamSuggestionItem,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderBottomColor: theme.colors.borderLight,
+                  },
+                ]}
+                onPress={() => {
+                  setManualMatchTeamSelections((prev) => ({ ...prev, [field]: team }));
+                  setManualMatchTeamQueries((prev) => ({ ...prev, [field]: `${team.team_num} - ${team.name || `Team ${team.team_num}`}` }));
+                  setActiveTeamField(null);
+                  setManualMatchStatus(null);
+                }}
+              >
+                <Text style={[styles.teamSuggestionTitle, { color: theme.colors.text }]}>
+                  {team.team_num} - {team.name || `Team ${team.team_num}`}
+                </Text>
+                <Text style={[styles.teamSuggestionMeta, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                  {[team.city, team.state].filter(Boolean).join(', ') || 'Team in local database'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+    );
   };
 
   if (!isScoutingLead) {
@@ -622,8 +789,7 @@ export default function ControlDashboardScreen() {
                 <View style={styles.formModeRow}>
                   {[
                     { key: 'qm', label: 'Quals' },
-                    { key: 'qf', label: 'QF' },
-                    { key: 'sf', label: 'Semis' },
+                    { key: 'sf', label: 'Playoffs' },
                     { key: 'f', label: 'Finals' },
                   ].map((option) => (
                     <TouchableOpacity
@@ -646,52 +812,47 @@ export default function ControlDashboardScreen() {
 
                 <View style={styles.modalTwoColumn}>
                   <TextInput
-                    style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
-                    value={manualMatchForm.set_number}
-                    onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, set_number: text }))}
-                    placeholder="Series"
-                    placeholderTextColor={theme.colors.textSecondary}
-                    keyboardType="numeric"
-                  />
-                  <TextInput
-                    style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
-                    value={manualMatchForm.match_number}
-                    onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, match_number: text }))}
-                    placeholder="Match Number"
+                    style={[styles.modalInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    value={manualMatchForm.number}
+                    onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, number: text }))}
+                    placeholder={
+                      manualMatchForm.comp_level === 'qm'
+                        ? 'Quals number'
+                        : manualMatchForm.comp_level === 'f'
+                          ? 'Finals number'
+                          : 'Playoffs number'
+                    }
                     placeholderTextColor={theme.colors.textSecondary}
                     keyboardType="numeric"
                   />
                 </View>
 
                 <Text style={[styles.modalSectionLabel, { color: theme.colors.textSecondary }]}>Red Alliance</Text>
+                <Text style={[styles.sectionNote, styles.leftAlignedNote, { color: theme.colors.textSecondary }]}>
+                  Search by team number or name. Only teams already in your local database can be used.
+                </Text>
                 <View style={styles.modalThreeColumn}>
                   {['red1', 'red2', 'red3'].map((field, index) => (
-                    <TextInput
-                      key={field}
-                      style={[styles.modalInput, styles.modalThirdInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
-                      value={manualMatchForm[field]}
-                      onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, [field]: text }))}
-                      placeholder={`Red ${index + 1}`}
-                      placeholderTextColor={theme.colors.textSecondary}
-                      keyboardType="numeric"
-                    />
+                    <View key={field} style={styles.modalThirdInput}>
+                      {renderManualMatchTeamField(field, `Red ${index + 1}`)}
+                    </View>
                   ))}
                 </View>
 
                 <Text style={[styles.modalSectionLabel, { color: theme.colors.textSecondary }]}>Blue Alliance</Text>
                 <View style={styles.modalThreeColumn}>
                   {['blue1', 'blue2', 'blue3'].map((field, index) => (
-                    <TextInput
-                      key={field}
-                      style={[styles.modalInput, styles.modalThirdInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
-                      value={manualMatchForm[field]}
-                      onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, [field]: text }))}
-                      placeholder={`Blue ${index + 1}`}
-                      placeholderTextColor={theme.colors.textSecondary}
-                      keyboardType="numeric"
-                    />
+                    <View key={field} style={styles.modalThirdInput}>
+                      {renderManualMatchTeamField(field, `Blue ${index + 1}`)}
+                    </View>
                   ))}
                 </View>
+
+                {teamCatalogLoading && (
+                  <Text style={[styles.sectionNote, styles.leftAlignedNote, { color: theme.colors.textSecondary }]}>
+                    Loading teams...
+                  </Text>
+                )}
 
                 <Text style={[styles.modalSectionLabel, { color: theme.colors.textSecondary }]}>Scores</Text>
                 <View style={styles.modalTwoColumn}>
@@ -715,6 +876,27 @@ export default function ControlDashboardScreen() {
                 <Text style={[styles.sectionNote, styles.leftAlignedNote, { color: theme.colors.textSecondary }]}>
                   Leave scores blank if the match has not been played yet.
                 </Text>
+
+                {manualMatchStatus && (
+                  <View
+                    style={[
+                      styles.inlineStatus,
+                      manualMatchStatus.type === 'error' && styles.inlineStatusError,
+                      manualMatchStatus.type === 'success' && styles.inlineStatusSuccess,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.inlineStatusText,
+                        { color: theme.colors.text },
+                        manualMatchStatus.type === 'error' && styles.inlineStatusTextError,
+                        manualMatchStatus.type === 'success' && styles.inlineStatusTextSuccess,
+                      ]}
+                    >
+                      {manualMatchStatus.message}
+                    </Text>
+                  </View>
+                )}
 
                 <TouchableOpacity
                   style={[styles.modalPrimaryButton, { backgroundColor: theme.colors.primary }, addingMatch && styles.disabledButton]}
@@ -975,18 +1157,73 @@ const styles = StyleSheet.create({
   modalThreeColumn: {
     flexDirection: 'row',
     gap: 10,
+    alignItems: 'flex-start',
+    overflow: 'visible',
   },
   modalHalfInput: {
     flex: 1,
   },
   modalThirdInput: {
     flex: 1,
+    overflow: 'visible',
   },
   modalSectionLabel: {
     marginTop: 14,
     marginBottom: 8,
     fontSize: 13,
     fontWeight: '700',
+  },
+  inlineStatus: {
+    marginTop: 10,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(128, 128, 128, 0.12)',
+  },
+  inlineStatusError: {
+    backgroundColor: 'rgba(220, 38, 38, 0.14)',
+  },
+  inlineStatusSuccess: {
+    backgroundColor: 'rgba(22, 163, 74, 0.14)',
+  },
+  inlineStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  inlineStatusTextError: {
+    color: '#dc2626',
+  },
+  inlineStatusTextSuccess: {
+    color: '#15803d',
+  },
+  teamPickerField: {
+    position: 'relative',
+    zIndex: 20,
+  },
+  teamSuggestionList: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
+    borderWidth: 1,
+    borderRadius: 10,
+    overflow: 'hidden',
+    maxHeight: 220,
+    zIndex: 30,
+    elevation: 6,
+  },
+  teamSuggestionItem: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  teamSuggestionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  teamSuggestionMeta: {
+    fontSize: 12,
+    marginTop: 2,
   },
   modalPrimaryButton: {
     marginTop: 14,
