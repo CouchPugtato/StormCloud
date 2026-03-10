@@ -9,16 +9,18 @@ import {
   Alert,
   FlatList,
   Platform,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 import { platformUtils } from '../utils/platformUtils';
+import { registerForPushNotifications, unregisterNativePush, unregisterWebPush } from '../utils/pushNotifications';
 import apiService from '../utils/apiService';
 
 export default function ProfileScreen() {
-  const { theme } = useTheme();
-  const { user, signIn, signOut, createAccount, updateUserRole, getLeaderboard } = useAuth();
+  const { theme, isDarkMode, themePreference, toggleTheme, setSystemTheme } = useTheme();
+  const { user, signIn, signOut, createAccount, getLeaderboard } = useAuth();
   const [activeTab, setActiveTab] = useState('leaderboard');
   const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup'
   const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
@@ -28,16 +30,16 @@ export default function ProfileScreen() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
   const [authMessageType, setAuthMessageType] = useState('error');
-  const [allAccounts, setAllAccounts] = useState([]);
-  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushStatusText, setPushStatusText] = useState('Push notifications are disabled for this browser/device session.');
 
   const roleOptions = [
     { key: USER_ROLES.VIEWER, label: 'Viewer' },
     { key: USER_ROLES.SCOUTER, label: 'Scouter' },
-    { key: USER_ROLES.SCOUTING_LEAD, label: 'Scouting Lead' },
     { key: USER_ROLES.DRIVE_TEAM, label: 'Drive Team' },
+    { key: USER_ROLES.SCOUTING_LEAD, label: 'Scouting Lead' },
   ];
-  const upgradableRoleOptions = roleOptions.filter((role) => role.key !== USER_ROLES.VIEWER);
   const currentRole = user?.role || USER_ROLES.VIEWER;
   const isAuthModalLarge = authMode === 'signup';
 
@@ -87,24 +89,49 @@ export default function ProfileScreen() {
     return getLeaderboard(leaderboardType, selectedEvent);
   }, [getLeaderboard, leaderboardType, selectedEvent]);
 
-  useEffect(() => {
-    const loadAccounts = async () => {
-      if (!user || user.role !== USER_ROLES.SCOUTING_LEAD || activeTab !== 'profile') {
-        return;
-      }
-      setAccountsLoading(true);
-      try {
-        const accounts = await apiService.getUsers();
-        setAllAccounts(accounts);
-      } catch (error) {
-        Alert.alert('Error', 'Unable to load account list.');
-      } finally {
-        setAccountsLoading(false);
-      }
-    };
+  const showInfo = (title, message) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message, [{ text: 'OK' }]);
+    }
+  };
 
-    loadAccounts();
-  }, [user, activeTab]);
+  const getPushUserID = () => {
+    return user?.id || 'anonymous';
+  };
+
+  const togglePushNotifications = async () => {
+    if (pushBusy) {
+      return;
+    }
+
+    const nextEnabled = !notificationsEnabled;
+    setPushBusy(true);
+    try {
+      if (nextEnabled) {
+        const result = await registerForPushNotifications(getPushUserID());
+        if (!result.ok) {
+          showInfo('Push Notifications', result.error || 'Unable to enable push notifications.');
+          return;
+        }
+        setPushStatusText('Push notifications are enabled for this device.');
+      } else {
+        if (Platform.OS === 'web') {
+          await unregisterWebPush(getPushUserID());
+        } else {
+          await unregisterNativePush(getPushUserID());
+        }
+        setPushStatusText('Push notifications are disabled for this browser/device session.');
+      }
+      setNotificationsEnabled(nextEnabled);
+    } catch (error) {
+      console.error('Push toggle failed:', error);
+      showInfo('Push Notifications', 'Unable to update push notification settings.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const handleAuth = async () => {
     setAuthMessage('');
@@ -176,18 +203,6 @@ export default function ProfileScreen() {
         { text: 'Sign Out', style: 'destructive', onPress: signOut },
       ]
     );
-  };
-
-  const handleRoleUpgrade = async (targetUserID, targetRole) => {
-    try {
-      await updateUserRole(targetUserID, targetRole);
-      setAllAccounts((prev) =>
-        prev.map((account) => (account.id === targetUserID ? { ...account, role: targetRole } : account))
-      );
-      Alert.alert('Success', 'User role updated.');
-    } catch (error) {
-      Alert.alert('Error', error.message || 'Unable to update role.');
-    }
   };
 
   const renderAuthForm = () => (
@@ -401,53 +416,68 @@ export default function ProfileScreen() {
         </Text>
       </View>
 
-      {currentRole === USER_ROLES.SCOUTING_LEAD && (
-        <View style={[styles.roleSection, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.roleSectionTitle, { color: theme.colors.text }]}>Account Management</Text>
-          <Text style={[styles.roleNote, { color: theme.colors.textSecondary }]}>
-            Upgrade users from Viewer to Scouter, Drive Team, or Scouting Lead.
-          </Text>
-          {accountsLoading ? (
-            <Text style={[styles.roleNote, { color: theme.colors.textSecondary }]}>Loading accounts...</Text>
-          ) : (
-            allAccounts.map((account) => (
-              <View key={account.id} style={[styles.accountRow, { borderColor: theme.colors.border }]}>
-                <View style={styles.accountInfo}>
-                  <Text style={[styles.accountName, { color: theme.colors.text }]}>
-                    {[account.first_name, account.last_name].filter(Boolean).join(' ') || account.name || account.email || account.id}
-                  </Text>
-                  <Text style={[styles.accountMeta, { color: theme.colors.textSecondary }]}>
-                    Current role: {(account.role || USER_ROLES.VIEWER).replace('_', ' ')}
-                  </Text>
-                </View>
-                <View style={styles.accountRoleButtons}>
-                  {upgradableRoleOptions.map((option) => (
-                    <TouchableOpacity
-                      key={`${account.id}-${option.key}`}
-                      style={[
-                        styles.accountRoleButton,
-                        { borderColor: theme.colors.border },
-                        account.role === option.key && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-                      ]}
-                      onPress={() => handleRoleUpgrade(account.id, option.key)}
-                    >
-                      <Text
-                        style={[
-                          styles.accountRoleButtonText,
-                          { color: theme.colors.text },
-                          account.role === option.key && { color: 'white' },
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            ))
-          )}
+      <View style={[styles.roleSection, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.roleSectionTitle, { color: theme.colors.text }]}>Preferences</Text>
+
+        <View style={[styles.preferenceRow, styles.preferenceRowWithBorder, { borderBottomColor: theme.colors.borderLight }]}>
+          <View style={styles.preferenceTextBlock}>
+            <Text style={[styles.preferenceTitle, { color: theme.colors.text }]}>Dark Mode</Text>
+            <Text style={[styles.preferenceSubtitle, { color: theme.colors.textSecondary }]}>
+              {themePreference === 'system' ? 'Following system preference' : (isDarkMode ? 'Dark theme enabled' : 'Light theme enabled')}
+            </Text>
+          </View>
+          <Switch
+            value={isDarkMode}
+            onValueChange={toggleTheme}
+            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor={theme.colors.border}
+            style={styles.preferenceSwitch}
+            disabled={themePreference === 'system'}
+          />
         </View>
-      )}
+
+        <View style={[styles.preferenceRow, styles.preferenceRowWithBorder, { borderBottomColor: theme.colors.borderLight }]}>
+          <View style={styles.preferenceTextBlock}>
+            <Text style={[styles.preferenceTitle, { color: theme.colors.text }]}>Use System Theme</Text>
+            <Text style={[styles.preferenceSubtitle, { color: theme.colors.textSecondary }]}>
+              Follow device theme settings
+            </Text>
+          </View>
+          <Switch
+            value={themePreference === 'system'}
+            onValueChange={() => {
+              if (themePreference === 'system') {
+                toggleTheme();
+              } else {
+                setSystemTheme();
+              }
+            }}
+            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor={theme.colors.border}
+            style={styles.preferenceSwitch}
+          />
+        </View>
+
+        <View style={styles.preferenceRow}>
+          <View style={styles.preferenceTextBlock}>
+            <Text style={[styles.preferenceTitle, { color: theme.colors.text }]}>Push Notifications</Text>
+            <Text style={[styles.preferenceSubtitle, { color: theme.colors.textSecondary }]}>
+              {pushStatusText}
+            </Text>
+          </View>
+          <Switch
+            value={notificationsEnabled}
+            onValueChange={togglePushNotifications}
+            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor={theme.colors.border}
+            style={styles.preferenceSwitch}
+            disabled={pushBusy}
+          />
+        </View>
+      </View>
 
       <View style={styles.statsContainer}>
         <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
@@ -456,6 +486,9 @@ export default function ProfileScreen() {
             {user.stats.allTimeMatches}
           </Text>
           <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>All Time</Text>
+          <Text style={[styles.statDescription, { color: theme.colors.textSecondary }]}>
+            Total matches you have scouted across all seasons.
+          </Text>
         </View>
         <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
           <Ionicons name="calendar" size={24} color="#4ECDC4" />
@@ -463,6 +496,9 @@ export default function ProfileScreen() {
             {user.stats.seasonMatches}
           </Text>
           <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>This Season</Text>
+          <Text style={[styles.statDescription, { color: theme.colors.textSecondary }]}>
+            Matches you have submitted during the current season.
+          </Text>
         </View>
         <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
           <Ionicons name="flag" size={24} color="#FF6B6B" />
@@ -470,6 +506,9 @@ export default function ProfileScreen() {
             {Object.keys(user.stats.eventMatches).length}
           </Text>
           <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Events</Text>
+          <Text style={[styles.statDescription, { color: theme.colors.textSecondary }]}>
+            Number of different events where you have recorded scouting data.
+          </Text>
         </View>
       </View>
 
@@ -1027,38 +1066,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
-  accountRow: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 10,
-  },
-  accountInfo: {
-    marginBottom: 8,
-  },
-  accountName: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  accountMeta: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  accountRoleButtons: {
+  preferenceRow: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  accountRoleButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 8,
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
   },
-  accountRoleButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
+  preferenceRowWithBorder: {
+    borderBottomWidth: 1,
+  },
+  preferenceTextBlock: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  preferenceTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  preferenceSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  preferenceSwitch: {
+    transform: [{ scaleX: 1.05 }, { scaleY: 1.05 }],
   },
   statsContainer: {
     flexDirection: 'row',
@@ -1081,6 +1112,12 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 12,
     marginTop: 4,
+  },
+  statDescription: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 8,
+    textAlign: 'center',
   },
   signOutButton: {
     flexDirection: 'row',

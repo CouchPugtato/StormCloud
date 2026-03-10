@@ -12,7 +12,7 @@ import TeamDetailScreen from '../screens/TeamDetailScreen';
 import CommsScreen from '../screens/CommsScreen';
 import PickListScreen from '../screens/PickListScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import SettingsScreen from '../screens/SettingsScreen';
+import ControlDashboardScreen from '../screens/ControlDashboardScreen';
 import PlatformDemoScreen from '../screens/PlatformDemoScreen';
 import MatchScoutingForm from '../components/MatchScoutingForm';
 import PitScoutingForm from '../components/PitScoutingForm';
@@ -71,6 +71,7 @@ function TabNavigator() {
   const { theme, isDarkMode } = useTheme();
   const { user } = useAuth();
   const canViewPickList = user?.role && user.role !== USER_ROLES.VIEWER;
+  const canViewControlDashboard = user?.role === USER_ROLES.SCOUTING_LEAD;
   
   return (
     <Tab.Navigator
@@ -86,10 +87,10 @@ function TabNavigator() {
             iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
           } */ else if (route.name === 'PickList') {
             iconName = focused ? 'list' : 'list-outline';
+          } else if (route.name === 'ControlDashboard') {
+            iconName = focused ? 'shield-checkmark' : 'shield-checkmark-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
-          } else if (route.name === 'Settings') {
-            iconName = focused ? 'settings' : 'settings-outline';
           }
 
           return <Ionicons name={iconName} size={size} color={color} />;
@@ -110,8 +111,10 @@ function TabNavigator() {
       {canViewPickList && (
         <Tab.Screen name="PickList" component={PickListScreen} options={{ title: 'Pick List' }} />
       )}
+      {canViewControlDashboard && (
+        <Tab.Screen name="ControlDashboard" component={ControlDashboardScreen} options={{ title: 'Control Dashboard' }} />
+      )}
       <Tab.Screen name="Profile" component={ProfileScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }

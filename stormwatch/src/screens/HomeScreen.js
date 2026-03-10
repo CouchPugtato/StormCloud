@@ -527,7 +527,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   headerTitle: {
-    fontSize: Platform.OS === 'web' ? 32 : 28,
+    fontSize: 28,
     fontWeight: 'bold',
     color: 'white',
     textAlign: 'center',

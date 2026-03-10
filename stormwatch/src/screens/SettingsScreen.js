@@ -8,7 +8,6 @@ import {
   Switch,
   Platform,
   Alert,
-  TextInput,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,20 +15,12 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useEventMode } from '../contexts/EventModeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getApiBaseURL } from '../utils/config';
-import { registerForPushNotifications, unregisterNativePush, unregisterWebPush } from '../utils/pushNotifications';
 import apiService from '../utils/apiService';
 
 export default function SettingsScreen() {
-  const { theme, isDarkMode, themePreference, toggleTheme, setSystemTheme } = useTheme();
+  const { theme, isDarkMode } = useTheme();
   const { isEventMode, toggleEventMode } = useEventMode();
   const { user } = useAuth();
-  const accountTypeLabel = (user?.role || 'viewer').replace('_', ' ');
-  
-  const [settings, setSettings] = useState({
-    notifications: false,
-  });
-  const [pushBusy, setPushBusy] = useState(false);
-  const [pushStatusText, setPushStatusText] = useState('Push notifications are enabled for this device.');
 
   const [twitchUrl, setTwitchUrl] = useState('');
   const [isEditingTwitch, setIsEditingTwitch] = useState(false);
@@ -48,46 +39,8 @@ export default function SettingsScreen() {
     }
   };
 
-  const toggleSetting = (key) => {
-    setSettings(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
-
   const getPushUserID = () => {
     return user?.id || 'anonymous';
-  };
-
-  const togglePushNotifications = async () => {
-    if (pushBusy) {
-      return;
-    }
-    const nextEnabled = !settings.notifications;
-    setPushBusy(true);
-    try {
-      if (nextEnabled) {
-        const result = await registerForPushNotifications(getPushUserID());
-        if (!result.ok) {
-          showInfo('Push Notifications', result.error || 'Unable to enable push notifications.');
-          return;
-        }
-        setPushStatusText('Push notifications are enabled for this device.');
-      } else {
-        if (Platform.OS === 'web') {
-          await unregisterWebPush(getPushUserID());
-        } else {
-          await unregisterNativePush(getPushUserID());
-        }
-        setPushStatusText('Push notifications are disabled for this browser/device session.');
-      }
-      setSettings(prev => ({ ...prev, notifications: nextEnabled }));
-    } catch (error) {
-      console.error('Push toggle failed:', error);
-      showInfo('Push Notifications', 'Unable to update push notification settings.');
-    } finally {
-      setPushBusy(false);
-    }
   };
 
   const sendTestNotification = async () => {
@@ -152,53 +105,12 @@ export default function SettingsScreen() {
       title: 'Preferences',
       items: [
         {
-          key: 'accountType',
-          title: 'Account Type',
-          subtitle: accountTypeLabel.charAt(0).toUpperCase() + accountTypeLabel.slice(1),
-          icon: 'person-circle',
-          type: 'readonly',
-        },
-        {
-          key: 'notifications',
-          title: 'Push Notifications',
-          subtitle: pushStatusText,
-          icon: 'notifications',
-          type: 'toggle',
-          value: settings.notifications,
-          onToggle: togglePushNotifications,
-        },
-        {
           key: 'pushTest',
           title: 'Send Test Notification',
           subtitle: 'Send a test to this user on web and mobile tokens',
           icon: 'paper-plane',
           type: 'info',
           onPress: sendTestNotification,
-          disabled: pushBusy,
-        },
-        {
-          key: 'darkMode',
-          title: 'Dark Mode',
-          subtitle: themePreference === 'system' ? 'Following system preference' : (isDarkMode ? 'Dark theme enabled' : 'Light theme enabled'),
-          icon: isDarkMode ? 'moon' : 'sunny',
-          type: 'toggle',
-          value: isDarkMode,
-          onToggle: toggleTheme,
-        },
-        {
-          key: 'systemTheme',
-          title: 'Use System Theme',
-          subtitle: 'Follow device theme settings',
-          icon: 'phone-portrait',
-          type: 'toggle',
-          value: themePreference === 'system',
-          onToggle: () => {
-            if (themePreference === 'system') {
-              toggleTheme();
-            } else {
-              setSystemTheme();
-            }
-          },
         },
         {
           key: 'eventMode',
@@ -251,12 +163,8 @@ export default function SettingsScreen() {
             <Switch
               value={item.value}
               onValueChange={() => {
-                if (!isDisabled) {
-                  if (item.onToggle) {
-                    item.onToggle();
-                  } else {
-                    toggleSetting(item.key);
-                  }
+                if (!isDisabled && item.onToggle) {
+                  item.onToggle();
                 }
               }}
               trackColor={{ false: switchTrackOff, true: switchTrackOn }}
@@ -265,10 +173,6 @@ export default function SettingsScreen() {
               style={styles.themeSwitch}
               disabled={isDisabled}
             />
-          ) : item.type === 'readonly' ? (
-            <Text style={[styles.readonlyValue, { color: theme.colors.textSecondary }]}>
-              {item.subtitle}
-            </Text>
           ) : item.type === 'input' ? (
             <Ionicons name="create-outline" size={20} color={theme.colors.textSecondary} />
           ) : (
@@ -408,11 +312,6 @@ const styles = StyleSheet.create({
   },
   settingRight: {
     marginLeft: 12,
-  },
-  readonlyValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    textTransform: 'capitalize',
   },
   themeSwitch: {
     transform: [{ scaleX: 1.05 }, { scaleY: 1.05 }],
