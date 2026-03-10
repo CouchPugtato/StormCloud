@@ -118,7 +118,10 @@ class ApiService {
     try {
       return await this.request(`/pit-scouting/${teamKey}/${eventKey}`);
     } catch (error) {
-      if (error.message.includes('404')) {
+      if (
+        error.message.includes('404') ||
+        error.message.toLowerCase().includes('no pit scouting data found')
+      ) {
         return null; 
       }
       throw error; 
@@ -132,6 +135,13 @@ class ApiService {
       console.error('Failed to fetch teams:', error);
       return [];
     }
+  }
+
+  async addTeamFromTBA(teamNum) {
+    return this.request('/teams/add-from-tba', {
+      method: 'POST',
+      body: JSON.stringify({ team_num: Number(teamNum) }),
+    });
   }
 
   async getTeamsEPA(teamKeys) {

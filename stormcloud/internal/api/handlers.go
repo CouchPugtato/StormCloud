@@ -81,7 +81,20 @@ func TeamsSearch(db *sql.DB) http.HandlerFunc {
 func TeamGet(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		key := chi.URLParam(r, "team_key")
-		row := db.QueryRow(`SELECT team_key, team_num, name, city, state, country, rookie_year, COALESCE(pit_notes, '') as pit_notes, COALESCE(scouting_notes, '') as scouting_notes FROM teams WHERE team_key=?`, key)
+		row := db.QueryRow(`
+			SELECT
+				team_key,
+				team_num,
+				COALESCE(name, ''),
+				COALESCE(city, ''),
+				COALESCE(state, ''),
+				COALESCE(country, ''),
+				COALESCE(rookie_year, 0),
+				COALESCE(pit_notes, ''),
+				COALESCE(scouting_notes, '')
+			FROM teams
+			WHERE team_key=?
+		`, key)
 		var t struct {
 			TeamKey       string                 `json:"team_key"`
 			TeamNum       int                    `json:"team_num"`
@@ -110,6 +123,45 @@ func TeamGet(db *sql.DB) http.HandlerFunc {
 		}
 
 		writeJSON(w, 200, t)
+	}
+}
+
+func TeamAddFromTBA(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
+	type in struct {
+		TeamNum int `json:"team_num"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+		if payload.TeamNum <= 0 {
+			writeJSON(w, 400, map[string]string{"error": "valid team_num is required"})
+			return
+		}
+
+		team, err := syncService.SyncSingleTeam(payload.TeamNum)
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"ok":   true,
+			"team": team,
+		})
 	}
 }
 

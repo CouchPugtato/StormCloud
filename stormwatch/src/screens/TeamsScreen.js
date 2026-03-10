@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { globalStyles } from '../styles/globalStyles';
 import { platformUtils } from '../utils/platformUtils';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 import apiService from '../utils/apiService';
 
 const sampleTeams = [
@@ -130,6 +131,7 @@ const getAllEvents = () => {
 
 export default function TeamsScreen({ navigation }) {
   const { theme } = useTheme();
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEvent, setSelectedEvent] = useState('All Events');
   const [showFilters, setShowFilters] = useState(false);
@@ -138,6 +140,11 @@ export default function TeamsScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showAddTeamRow, setShowAddTeamRow] = useState(false);
+  const [teamNumberInput, setTeamNumberInput] = useState('');
+  const [addingTeam, setAddingTeam] = useState(false);
+
+  const canAddTeamsFromTBA = user?.role === USER_ROLES.SCOUTING_LEAD;
 
   const allEvents = useMemo(() => ['All Events', ...getAllEvents()], []);
 
@@ -158,6 +165,20 @@ export default function TeamsScreen({ navigation }) {
 
     fetchTeams();
   }, []);
+
+  const fetchTeams = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const teamsData = await apiService.getAllTeams();
+      setTeams(teamsData || []);
+    } catch (err) {
+      console.error('Failed to fetch teams:', err);
+      setError('Failed to load teams. Please check your connection.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const searchTeams = async () => {
@@ -250,6 +271,25 @@ export default function TeamsScreen({ navigation }) {
     </TouchableOpacity>
   );
 
+  const handleAddTeamFromTBA = async () => {
+    const teamNum = Number(teamNumberInput.trim());
+    if (!teamNum) {
+      return;
+    }
+
+    setAddingTeam(true);
+    try {
+      await apiService.addTeamFromTBA(teamNum);
+      setTeamNumberInput('');
+      setShowAddTeamRow(false);
+      await fetchTeams();
+    } catch (err) {
+      Alert.alert('Unable to add team', err.message || 'Failed to add team from TBA.');
+    } finally {
+      setAddingTeam(false);
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar 
@@ -261,6 +301,15 @@ export default function TeamsScreen({ navigation }) {
         <Text style={styles.headerSubtitle}>
           {filteredTeams?.length || 0} teams found
         </Text>
+        {canAddTeamsFromTBA && (
+          <TouchableOpacity
+            style={styles.addTeamHeaderButton}
+            onPress={() => setShowAddTeamRow((prev) => !prev)}
+          >
+            <Ionicons name={showAddTeamRow ? 'close' : 'add'} size={20} color="white" />
+            <Text style={styles.addTeamHeaderButtonText}>{showAddTeamRow ? 'Close' : 'Add Team'}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface }]}>
@@ -296,6 +345,30 @@ export default function TeamsScreen({ navigation }) {
           />
         </TouchableOpacity>
       </View>
+
+      {canAddTeamsFromTBA && showAddTeamRow && (
+        <View style={[styles.addTeamRow, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+          <View style={[styles.addTeamInputWrap, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
+            <Ionicons name="cloud-download-outline" size={18} color={theme.colors.textSecondary} style={styles.addTeamInputIcon} />
+            <TextInput
+              style={[styles.addTeamInput, { color: theme.colors.text }]}
+              placeholder="Enter team number from TBA"
+              placeholderTextColor={theme.colors.textSecondary}
+              keyboardType="numeric"
+              value={teamNumberInput}
+              onChangeText={setTeamNumberInput}
+              selectionColor={theme.colors.accent}
+            />
+          </View>
+          <TouchableOpacity
+            style={[styles.addTeamActionButton, { backgroundColor: theme.colors.accent }, (!teamNumberInput.trim() || addingTeam) && styles.disabledButton]}
+            onPress={handleAddTeamFromTBA}
+            disabled={!teamNumberInput.trim() || addingTeam}
+          >
+            <Text style={styles.addTeamActionButtonText}>{addingTeam ? 'Adding...' : 'Add'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {showFilters && (
         <View style={[styles.filtersContainer, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
@@ -372,6 +445,25 @@ const styles = StyleSheet.create({
     color: '#e3f2fd',
     opacity: 0.9,
   },
+  addTeamHeaderButton: {
+    position: 'absolute',
+    top: platformUtils.getStatusBarHeight() + 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  addTeamHeaderButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
   searchContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
@@ -379,6 +471,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#fff',
     ...platformUtils.getPlatformShadow(1),
+  },
+  addTeamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+    gap: 10,
+    borderBottomWidth: 1,
+  },
+  addTeamInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  addTeamInputIcon: {
+    marginRight: 8,
+  },
+  addTeamInput: {
+    flex: 1,
+    fontSize: 15,
+    outlineStyle: 'none',
+  },
+  addTeamActionButton: {
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  addTeamActionButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   searchInputContainer: {
     flex: 1,

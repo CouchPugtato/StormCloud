@@ -411,6 +411,46 @@ func (s *SyncService) storeTeam(team models.Team) error {
 	return err
 }
 
+func (s *SyncService) SyncSingleTeam(teamNum int) (*models.Team, error) {
+	if teamNum <= 0 {
+		return nil, fmt.Errorf("invalid team number")
+	}
+
+	s.tbaLimiter.Wait()
+	code, body, _, err := TBAGet(fmt.Sprintf("/team/frc%d/simple", teamNum), "")
+	if err != nil {
+		return nil, fmt.Errorf("[TBA] Team request failed: %w", err)
+	}
+	if code == 404 {
+		return nil, fmt.Errorf("team not found on TBA")
+	}
+	if code != 200 {
+		return nil, fmt.Errorf("[TBA] Team request returned %d", code)
+	}
+
+	var tbaTeam models.TBATeam
+	if err := json.Unmarshal(body, &tbaTeam); err != nil {
+		return nil, fmt.Errorf("failed to parse TBA team: %w", err)
+	}
+
+	team := models.Team{
+		TeamKey:    tbaTeam.Key,
+		TeamNum:    tbaTeam.TeamNumber,
+		Name:       tbaTeam.Nickname,
+		City:       tbaTeam.City,
+		State:      tbaTeam.StateProv,
+		Country:    tbaTeam.Country,
+		RookieYear: tbaTeam.RookieYear,
+		LastSynced: time.Now(),
+	}
+
+	if err := s.storeTeam(team); err != nil {
+		return nil, err
+	}
+
+	return &team, nil
+}
+
 func (s *SyncService) storeEvent(event models.Event) error {
 	_, err := s.db.Exec(`
 		INSERT OR REPLACE INTO events 
