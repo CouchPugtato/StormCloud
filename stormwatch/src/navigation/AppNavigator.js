@@ -13,6 +13,7 @@ import CommsScreen from '../screens/CommsScreen';
 import PickListScreen from '../screens/PickListScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import ControlDashboardScreen from '../screens/ControlDashboardScreen';
+import BatteryTrackerScreen from '../screens/BatteryTrackerScreen';
 import PlatformDemoScreen from '../screens/PlatformDemoScreen';
 import MatchScoutingForm from '../components/MatchScoutingForm';
 import AllianceScoutingForm from '../components/AllianceScoutingForm';
@@ -78,6 +79,7 @@ function TabNavigator() {
   const { user } = useAuth();
   const canViewPickList = user?.role && user.role !== USER_ROLES.VIEWER;
   const canViewControlDashboard = user?.role === USER_ROLES.SCOUTING_LEAD;
+  const canViewBatteryTracker = user?.role === USER_ROLES.DRIVE_TEAM;
   
   return (
     <Tab.Navigator
@@ -95,6 +97,8 @@ function TabNavigator() {
             iconName = focused ? 'list' : 'list-outline';
           } else if (route.name === 'ControlDashboard') {
             iconName = focused ? 'shield-checkmark' : 'shield-checkmark-outline';
+          } else if (route.name === 'BatteryTracker') {
+            iconName = focused ? 'flash' : 'flash-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -119,6 +123,9 @@ function TabNavigator() {
       )}
       {canViewControlDashboard && (
         <Tab.Screen name="ControlDashboard" component={ControlDashboardScreen} options={{ title: 'Control Dashboard' }} />
+      )}
+      {canViewBatteryTracker && (
+        <Tab.Screen name="BatteryTracker" component={BatteryTrackerScreen} options={{ title: 'Battery Tracker' }} />
       )}
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

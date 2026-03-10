@@ -326,6 +326,48 @@ class ApiService {
       body: JSON.stringify(payload),
     });
   }
+
+  async getBatteryTrackerEntries() {
+    return this.request('/battery-tracker');
+  }
+
+  async createBatteryTrackerEntry(payload) {
+    return this.request('/battery-tracker', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async startBatteryTrackerTimer(id) {
+    return this.request('/battery-tracker/start-timer', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  }
+
+  async deleteBatteryTrackerEntry(id) {
+    return this.request('/battery-tracker/delete', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  }
+
+  async clearBatteryTrackerEntries() {
+    return this.request('/battery-tracker/clear', {
+      method: 'POST',
+    });
+  }
+
+  async getBatteryInventory() {
+    return this.request('/battery-inventory');
+  }
+
+  async saveBatteryInventory(items) {
+    return this.request('/battery-inventory', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+  }
 }
 
 const apiService = new ApiService();

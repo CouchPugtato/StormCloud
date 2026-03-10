@@ -1730,3 +1730,350 @@ func DeviceUnregister(db *sql.DB) http.HandlerFunc {
 		writeJSON(w, 200, map[string]any{"ok": true})
 	}
 }
+
+func BatteryTrackerList(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "drive_team" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT id, battery_name, COALESCE(note, ''), created_at, COALESCE(created_by_user_id, ''), unplugged_at, safe_to_plug_at
+			FROM battery_tracker_entries
+			ORDER BY created_at DESC
+		`)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer rows.Close()
+
+		type entry struct {
+			ID              string `json:"id"`
+			BatteryName     string `json:"battery_name"`
+			Note            string `json:"note"`
+			CreatedAt       int64  `json:"created_at"`
+			CreatedByUserID string `json:"created_by_user_id"`
+			UnpluggedAt     *int64 `json:"unplugged_at"`
+			SafeToPlugAt    *int64 `json:"safe_to_plug_at"`
+		}
+
+		out := make([]entry, 0)
+		for rows.Next() {
+			var item entry
+			var unpluggedAt, safeToPlugAt sql.NullInt64
+			if err := rows.Scan(&item.ID, &item.BatteryName, &item.Note, &item.CreatedAt, &item.CreatedByUserID, &unpluggedAt, &safeToPlugAt); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if unpluggedAt.Valid {
+				v := unpluggedAt.Int64
+				item.UnpluggedAt = &v
+			}
+			if safeToPlugAt.Valid {
+				v := safeToPlugAt.Int64
+				item.SafeToPlugAt = &v
+			}
+			out = append(out, item)
+		}
+
+		writeJSON(w, 200, out)
+	}
+}
+
+func BatteryTrackerCreate(db *sql.DB) http.HandlerFunc {
+	type in struct {
+		BatteryName string `json:"battery_name"`
+		Note        string `json:"note"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "drive_team" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+
+		payload.BatteryName = strings.TrimSpace(payload.BatteryName)
+		payload.Note = strings.TrimSpace(payload.Note)
+		if payload.BatteryName == "" {
+			writeJSON(w, 400, map[string]string{"error": "battery_name is required"})
+			return
+		}
+
+		id := fmt.Sprintf("%d_%s", time.Now().UnixNano(), strings.ReplaceAll(user.ID, "-", ""))
+		now := time.Now().UnixMilli()
+		_, err = db.Exec(`
+			INSERT INTO battery_tracker_entries(id, battery_name, note, created_at, created_by_user_id)
+			VALUES(?,?,?,?,?)
+		`, id, payload.BatteryName, payload.Note, now, user.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 201, map[string]any{
+			"id":                 id,
+			"battery_name":       payload.BatteryName,
+			"note":               payload.Note,
+			"created_at":         now,
+			"created_by_user_id": user.ID,
+			"unplugged_at":       nil,
+			"safe_to_plug_at":    nil,
+		})
+	}
+}
+
+func BatteryTrackerStartTimer(db *sql.DB) http.HandlerFunc {
+	type in struct {
+		ID string `json:"id"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "drive_team" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+		payload.ID = strings.TrimSpace(payload.ID)
+		if payload.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id is required"})
+			return
+		}
+
+		unpluggedAt := time.Now().UnixMilli()
+		safeToPlugAt := unpluggedAt + (30 * 60 * 1000)
+		res, err := db.Exec(`
+			UPDATE battery_tracker_entries
+			SET unplugged_at=?, safe_to_plug_at=?
+			WHERE id=?
+		`, unpluggedAt, safeToPlugAt, payload.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		rowsAffected, _ := res.RowsAffected()
+		if rowsAffected == 0 {
+			writeJSON(w, 404, map[string]string{"error": "battery entry not found"})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"ok":             true,
+			"id":             payload.ID,
+			"unplugged_at":   unpluggedAt,
+			"safe_to_plug_at": safeToPlugAt,
+		})
+	}
+}
+
+func BatteryTrackerDelete(db *sql.DB) http.HandlerFunc {
+	type in struct {
+		ID string `json:"id"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "drive_team" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+		payload.ID = strings.TrimSpace(payload.ID)
+		if payload.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id is required"})
+			return
+		}
+
+		res, err := db.Exec(`DELETE FROM battery_tracker_entries WHERE id=?`, payload.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		rowsAffected, _ := res.RowsAffected()
+		if rowsAffected == 0 {
+			writeJSON(w, 404, map[string]string{"error": "battery entry not found"})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true})
+	}
+}
+
+func BatteryTrackerClear(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "drive_team" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		if _, err := db.Exec(`DELETE FROM battery_tracker_entries`); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true})
+	}
+}
+
+func BatteryInventoryList(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "drive_team" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT id, name, rank, created_at
+			FROM battery_inventory
+			ORDER BY rank ASC, created_at ASC
+		`)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer rows.Close()
+
+		type item struct {
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			Rank      int    `json:"rank"`
+			CreatedAt int64  `json:"created_at"`
+		}
+
+		out := make([]item, 0)
+		for rows.Next() {
+			var it item
+			if err := rows.Scan(&it.ID, &it.Name, &it.Rank, &it.CreatedAt); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			out = append(out, it)
+		}
+
+		writeJSON(w, 200, out)
+	}
+}
+
+func BatteryInventorySave(db *sql.DB) http.HandlerFunc {
+	type inItem struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Rank int    `json:"rank"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "drive_team" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload struct {
+			Items []inItem `json:"items"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		if _, err := tx.Exec(`DELETE FROM battery_inventory`); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		stmt, err := tx.Prepare(`
+			INSERT INTO battery_inventory(id, name, rank, created_at)
+			VALUES(?,?,?,?)
+		`)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer stmt.Close()
+
+		now := time.Now().UnixMilli()
+		for index, item := range payload.Items {
+			item.ID = strings.TrimSpace(item.ID)
+			item.Name = strings.TrimSpace(item.Name)
+			if item.ID == "" {
+				item.ID = fmt.Sprintf("battery_%d_%d", now, index+1)
+			}
+			if item.Name == "" {
+				writeJSON(w, 400, map[string]string{"error": "battery name is required"})
+				return
+			}
+			rank := item.Rank
+			if rank <= 0 {
+				rank = index + 1
+			}
+			if _, err := stmt.Exec(item.ID, item.Name, rank, now); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true, "count": len(payload.Items)})
+	}
+}

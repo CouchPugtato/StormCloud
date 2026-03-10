@@ -118,6 +118,13 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Post("/app-settings", AppSettingsSet(db))
 		r.Get("/users", LocalUsersList(db))
 		r.Post("/users/role", LocalUserRoleUpdate(db))
+		r.Get("/battery-tracker", BatteryTrackerList(db))
+		r.Post("/battery-tracker", BatteryTrackerCreate(db))
+		r.Post("/battery-tracker/start-timer", BatteryTrackerStartTimer(db))
+		r.Post("/battery-tracker/delete", BatteryTrackerDelete(db))
+		r.Post("/battery-tracker/clear", BatteryTrackerClear(db))
+		r.Get("/battery-inventory", BatteryInventoryList(db))
+		r.Post("/battery-inventory", BatteryInventorySave(db))
 
 		r.Get("/event-mode", EventModeGet(scheduler))
 		r.Post("/event-mode", EventModeSet(scheduler))
