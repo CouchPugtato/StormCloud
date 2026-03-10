@@ -224,11 +224,23 @@ func TeamSchedule(db *sql.DB) http.HandlerFunc {
 func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
 
 // --- EVENTS / MATCHES
-func EventsList(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
+func EventsList(db *sql.DB, _ *ingest.SyncService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		year := strings.TrimSpace(r.URL.Query().Get("year"))
 
-		configuredKeys := syncService.GetConfiguredTBAKeys()
+		managedKeys := make([]string, 0)
+		managedRows, managedErr := db.Query(`SELECT event_key FROM managed_events ORDER BY created_at ASC`)
+		if managedErr == nil {
+			defer managedRows.Close()
+			for managedRows.Next() {
+				var eventKey string
+				if err := managedRows.Scan(&eventKey); err == nil && strings.TrimSpace(eventKey) != "" {
+					managedKeys = append(managedKeys, strings.TrimSpace(eventKey))
+				}
+			}
+		}
+
+		configuredKeys := managedKeys
 		if len(configuredKeys) == 0 {
 			writeJSON(w, 200, []interface{}{})
 			return
@@ -273,6 +285,256 @@ func EventsList(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
 			out = append(out, e)
 		}
 		writeJSON(w, 200, out)
+	}
+}
+
+func ManagedEventsList(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT e.event_key, COALESCE(e.year, 0), COALESCE(e.name, ''), COALESCE(e.city, ''), COALESCE(e.state, ''), COALESCE(e.country, ''), COALESCE(e.start_date, ''), COALESCE(e.end_date, ''), me.source
+			FROM managed_events me
+			LEFT JOIN events e ON e.event_key = me.event_key
+			ORDER BY COALESCE(e.start_date, ''), me.created_at
+		`)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer rows.Close()
+
+		type managedEvent struct {
+			EventKey  string `json:"event_key"`
+			Year      int    `json:"year"`
+			Name      string `json:"name"`
+			City      string `json:"city"`
+			State     string `json:"state"`
+			Country   string `json:"country"`
+			StartDate string `json:"start_date"`
+			EndDate   string `json:"end_date"`
+			Source    string `json:"source"`
+		}
+
+		out := make([]managedEvent, 0)
+		for rows.Next() {
+			var item managedEvent
+			if err := rows.Scan(&item.EventKey, &item.Year, &item.Name, &item.City, &item.State, &item.Country, &item.StartDate, &item.EndDate, &item.Source); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			out = append(out, item)
+		}
+		writeJSON(w, 200, out)
+	}
+}
+
+func ManagedEventAddFromTBA(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
+	type in struct {
+		EventKey string `json:"event_key"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+		eventKey := strings.TrimSpace(payload.EventKey)
+		if eventKey == "" {
+			writeJSON(w, 400, map[string]string{"error": "event_key is required"})
+			return
+		}
+
+		if err := syncService.SyncEvent(eventKey); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+
+		_, err = db.Exec(`
+			INSERT INTO managed_events(event_key, source, created_at)
+			VALUES(?, 'tba', ?)
+			ON CONFLICT(event_key) DO UPDATE SET source='tba'
+		`, eventKey, time.Now().Unix())
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true, "event_key": eventKey})
+	}
+}
+
+func ManagedEventAddManual(db *sql.DB) http.HandlerFunc {
+	type in struct {
+		EventKey  string `json:"event_key"`
+		Year      int    `json:"year"`
+		Name      string `json:"name"`
+		City      string `json:"city"`
+		State     string `json:"state"`
+		Country   string `json:"country"`
+		StartDate string `json:"start_date"`
+		EndDate   string `json:"end_date"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+
+		payload.EventKey = strings.TrimSpace(payload.EventKey)
+		payload.Name = strings.TrimSpace(payload.Name)
+		payload.City = strings.TrimSpace(payload.City)
+		payload.State = strings.TrimSpace(payload.State)
+		payload.Country = strings.TrimSpace(payload.Country)
+		payload.StartDate = strings.TrimSpace(payload.StartDate)
+		payload.EndDate = strings.TrimSpace(payload.EndDate)
+		if payload.EventKey == "" || payload.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "event_key and name are required"})
+			return
+		}
+
+		_, err = db.Exec(`
+			INSERT OR REPLACE INTO events(event_key, year, name, city, state, country, start_date, end_date)
+			VALUES(?,?,?,?,?,?,?,?)
+		`, payload.EventKey, payload.Year, payload.Name, payload.City, payload.State, payload.Country, payload.StartDate, payload.EndDate)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		_, err = db.Exec(`
+			INSERT INTO managed_events(event_key, source, created_at)
+			VALUES(?, 'manual', ?)
+			ON CONFLICT(event_key) DO UPDATE SET source='manual'
+		`, payload.EventKey, time.Now().Unix())
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true, "event_key": payload.EventKey})
+	}
+}
+
+func ManagedEventSyncMatches(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
+	type in struct {
+		EventKey string `json:"event_key"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+		eventKey := strings.TrimSpace(payload.EventKey)
+		if eventKey == "" {
+			writeJSON(w, 400, map[string]string{"error": "event_key is required"})
+			return
+		}
+
+		if err := syncService.SyncEvent(eventKey); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true, "event_key": eventKey})
+	}
+}
+
+func ManagedEventDelete(db *sql.DB) http.HandlerFunc {
+	type in struct {
+		EventKey string `json:"event_key"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+		eventKey := strings.TrimSpace(payload.EventKey)
+		if eventKey == "" {
+			writeJSON(w, 400, map[string]string{"error": "event_key is required"})
+			return
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		if _, err := tx.Exec(`DELETE FROM managed_events WHERE event_key=?`, eventKey); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if _, err := tx.Exec(`DELETE FROM matches WHERE event_key=?`, eventKey); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if _, err := tx.Exec(`DELETE FROM events WHERE event_key=?`, eventKey); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true, "event_key": eventKey})
 	}
 }
 

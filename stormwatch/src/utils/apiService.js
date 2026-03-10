@@ -270,6 +270,38 @@ class ApiService {
     });
   }
 
+  async getManagedEvents() {
+    return this.request('/managed-events');
+  }
+
+  async addManagedEventFromTBA(eventKey) {
+    return this.request('/managed-events/add-from-tba', {
+      method: 'POST',
+      body: JSON.stringify({ event_key: eventKey }),
+    });
+  }
+
+  async addManagedEventManual(payload) {
+    return this.request('/managed-events/add-manual', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async syncManagedEventMatches(eventKey) {
+    return this.request('/managed-events/sync-matches', {
+      method: 'POST',
+      body: JSON.stringify({ event_key: eventKey }),
+    });
+  }
+
+  async deleteManagedEvent(eventKey) {
+    return this.request('/managed-events/delete', {
+      method: 'POST',
+      body: JSON.stringify({ event_key: eventKey }),
+    });
+  }
+
   async getUsers() {
     return this.request('/users');
   }

@@ -9,6 +9,7 @@ import {
   Switch,
   Platform,
   TextInput,
+  Modal,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +28,24 @@ export default function ControlDashboardScreen() {
   const [twitchUrl, setTwitchUrl] = useState('');
   const [twitchUrlDraft, setTwitchUrlDraft] = useState('');
   const [savingTwitchUrl, setSavingTwitchUrl] = useState(false);
+  const [showEventsModal, setShowEventsModal] = useState(false);
+  const [managedEvents, setManagedEvents] = useState([]);
+  const [managedEventsLoading, setManagedEventsLoading] = useState(false);
+  const [addingEvent, setAddingEvent] = useState(false);
+  const [syncingEventKey, setSyncingEventKey] = useState('');
+  const [deletingEventKey, setDeletingEventKey] = useState('');
+  const [eventModeForm, setEventModeForm] = useState('tba');
+  const [tbaEventKey, setTbaEventKey] = useState('');
+  const [manualEventForm, setManualEventForm] = useState({
+    event_key: '',
+    year: '',
+    name: '',
+    city: '',
+    state: '',
+    country: '',
+    start_date: '',
+    end_date: '',
+  });
 
   const upgradableRoleOptions = [
     { key: USER_ROLES.SCOUTER, label: 'Scouter' },
@@ -73,6 +92,28 @@ export default function ControlDashboardScreen() {
     loadAppSettings();
   }, [isScoutingLead]);
 
+  const loadManagedEvents = async () => {
+    if (!isScoutingLead) {
+      return;
+    }
+
+    setManagedEventsLoading(true);
+    try {
+      const events = await apiService.getManagedEvents();
+      setManagedEvents(events || []);
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to load events.');
+    } finally {
+      setManagedEventsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showEventsModal) {
+      loadManagedEvents();
+    }
+  }, [showEventsModal]);
+
   const handleRoleUpgrade = async (targetUserID, targetRole) => {
     try {
       await updateUserRole(targetUserID, targetRole);
@@ -103,6 +144,82 @@ export default function ControlDashboardScreen() {
       Alert.alert('Error', error.message || 'Unable to update stream link.');
     } finally {
       setSavingTwitchUrl(false);
+    }
+  };
+
+  const resetManualEventForm = () => {
+    setManualEventForm({
+      event_key: '',
+      year: '',
+      name: '',
+      city: '',
+      state: '',
+      country: '',
+      start_date: '',
+      end_date: '',
+    });
+  };
+
+  const handleAddManagedEvent = async () => {
+    if (addingEvent) {
+      return;
+    }
+
+    setAddingEvent(true);
+    try {
+      if (eventModeForm === 'tba') {
+        await apiService.addManagedEventFromTBA(tbaEventKey.trim());
+        setTbaEventKey('');
+      } else {
+        await apiService.addManagedEventManual({
+          ...manualEventForm,
+          event_key: manualEventForm.event_key.trim(),
+          year: Number(manualEventForm.year || 0),
+          name: manualEventForm.name.trim(),
+          city: manualEventForm.city.trim(),
+          state: manualEventForm.state.trim(),
+          country: manualEventForm.country.trim(),
+          start_date: manualEventForm.start_date.trim(),
+          end_date: manualEventForm.end_date.trim(),
+        });
+        resetManualEventForm();
+      }
+      await loadManagedEvents();
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to add event.');
+    } finally {
+      setAddingEvent(false);
+    }
+  };
+
+  const handleSyncManagedEvent = async (eventKey) => {
+    setSyncingEventKey(eventKey);
+    try {
+      await apiService.syncManagedEventMatches(eventKey);
+      await loadManagedEvents();
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to sync matches.');
+    } finally {
+      setSyncingEventKey('');
+    }
+  };
+
+  const handleDeleteManagedEvent = async (eventKey) => {
+    const confirmed = Platform.OS === 'web'
+      ? (typeof window !== 'undefined' ? window.confirm(`Remove ${eventKey} and its matches?`) : true)
+      : true;
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingEventKey(eventKey);
+    try {
+      await apiService.deleteManagedEvent(eventKey);
+      await loadManagedEvents();
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to remove event.');
+    } finally {
+      setDeletingEventKey('');
     }
   };
 
@@ -193,6 +310,21 @@ export default function ControlDashboardScreen() {
               </View>
             </View>
           </View>
+
+          <View style={[styles.preferenceRow, styles.preferenceRowWithBorder, { borderBottomColor: theme.colors.borderLight, marginTop: 14, marginBottom: 0, paddingBottom: 0, borderBottomWidth: 0 }]}>
+            <View style={styles.preferenceTextBlock}>
+              <Text style={[styles.preferenceTitle, { color: theme.colors.text }]}>Events</Text>
+              <Text style={[styles.preferenceSubtitle, { color: theme.colors.textSecondary }]}>
+                Add, remove, and sync event schedules.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.manageEventsButton, { backgroundColor: theme.colors.primary }]}
+              onPress={() => setShowEventsModal(true)}
+            >
+              <Text style={styles.manageEventsButtonText}>Manage</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
@@ -241,6 +373,182 @@ export default function ControlDashboardScreen() {
           )}
         </View>
       </ScrollView>
+
+      <Modal visible={showEventsModal} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+          <View style={[styles.modalHeader, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Manage Events</Text>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowEventsModal(false)}>
+              <Ionicons name="close" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+              <View style={styles.formModeRow}>
+                <TouchableOpacity
+                  style={[styles.formModeButton, eventModeForm === 'tba' && { backgroundColor: theme.colors.primary }]}
+                  onPress={() => setEventModeForm('tba')}
+                >
+                  <Text
+                    style={[
+                      styles.formModeButtonText,
+                      { color: theme.colors.text },
+                      eventModeForm === 'tba' && styles.formModeButtonTextActive,
+                    ]}
+                  >
+                    Add From TBA
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.formModeButton, eventModeForm === 'manual' && { backgroundColor: theme.colors.primary }]}
+                  onPress={() => setEventModeForm('manual')}
+                >
+                  <Text
+                    style={[
+                      styles.formModeButtonText,
+                      { color: theme.colors.text },
+                      eventModeForm === 'manual' && styles.formModeButtonTextActive,
+                    ]}
+                  >
+                    Add Manual
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {eventModeForm === 'tba' ? (
+                <View style={styles.modalFormBlock}>
+                  <Text style={[styles.preferenceSubtitle, { color: theme.colors.textSecondary }]}>Enter a TBA event key like `2026nhdur`.</Text>
+                  <TextInput
+                    style={[styles.modalInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    value={tbaEventKey}
+                    onChangeText={setTbaEventKey}
+                    placeholder="2026nhdur"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+              ) : (
+                <View style={styles.modalFormBlock}>
+                  <TextInput
+                    style={[styles.modalInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    value={manualEventForm.event_key}
+                    onChangeText={(text) => setManualEventForm((prev) => ({ ...prev, event_key: text }))}
+                    placeholder="Event key"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    autoCapitalize="none"
+                  />
+                  <TextInput
+                    style={[styles.modalInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    value={manualEventForm.name}
+                    onChangeText={(text) => setManualEventForm((prev) => ({ ...prev, name: text }))}
+                    placeholder="Event name"
+                    placeholderTextColor={theme.colors.textSecondary}
+                  />
+                  <View style={styles.modalTwoColumn}>
+                    <TextInput
+                      style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                      value={manualEventForm.year}
+                      onChangeText={(text) => setManualEventForm((prev) => ({ ...prev, year: text }))}
+                      placeholder="Year"
+                      placeholderTextColor={theme.colors.textSecondary}
+                      keyboardType="numeric"
+                    />
+                    <TextInput
+                      style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                      value={manualEventForm.city}
+                      onChangeText={(text) => setManualEventForm((prev) => ({ ...prev, city: text }))}
+                      placeholder="City"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                  </View>
+                  <View style={styles.modalTwoColumn}>
+                    <TextInput
+                      style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                      value={manualEventForm.state}
+                      onChangeText={(text) => setManualEventForm((prev) => ({ ...prev, state: text }))}
+                      placeholder="State"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                    <TextInput
+                      style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                      value={manualEventForm.country}
+                      onChangeText={(text) => setManualEventForm((prev) => ({ ...prev, country: text }))}
+                      placeholder="Country"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                  </View>
+                  <View style={styles.modalTwoColumn}>
+                    <TextInput
+                      style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                      value={manualEventForm.start_date}
+                      onChangeText={(text) => setManualEventForm((prev) => ({ ...prev, start_date: text }))}
+                      placeholder="Start date YYYY-MM-DD"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                    <TextInput
+                      style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                      value={manualEventForm.end_date}
+                      onChangeText={(text) => setManualEventForm((prev) => ({ ...prev, end_date: text }))}
+                      placeholder="End date YYYY-MM-DD"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.modalPrimaryButton, { backgroundColor: theme.colors.primary }, addingEvent && styles.disabledButton]}
+                onPress={handleAddManagedEvent}
+                disabled={addingEvent}
+              >
+                <Text style={styles.modalPrimaryButtonText}>{addingEvent ? 'Saving...' : 'Add Event'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Current Events</Text>
+              {managedEventsLoading ? (
+                <Text style={[styles.sectionNote, { color: theme.colors.textSecondary }]}>Loading events...</Text>
+              ) : (
+                managedEvents.map((event) => (
+                  <View key={event.event_key} style={[styles.eventRowCard, { borderColor: theme.colors.border }]}>
+                    <View style={styles.eventRowInfo}>
+                      <Text style={[styles.eventRowTitle, { color: theme.colors.text }]} numberOfLines={1}>
+                        {event.name || event.event_key}
+                      </Text>
+                      <Text style={[styles.eventRowMeta, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                        {event.event_key} · {event.source}
+                      </Text>
+                    </View>
+                    <View style={styles.eventRowActions}>
+                      {event.source === 'tba' && (
+                        <TouchableOpacity
+                          style={[styles.eventRowButton, { borderColor: theme.colors.border }]}
+                          onPress={() => handleSyncManagedEvent(event.event_key)}
+                          disabled={syncingEventKey === event.event_key}
+                        >
+                          <Text style={[styles.eventRowButtonText, { color: theme.colors.text }]}>
+                            {syncingEventKey === event.event_key ? '...' : 'Sync'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        style={[styles.eventRowDeleteButton, deletingEventKey === event.event_key && styles.disabledButton]}
+                        onPress={() => handleDeleteManagedEvent(event.event_key)}
+                        disabled={deletingEventKey === event.event_key}
+                      >
+                        <Text style={styles.eventRowDeleteText}>{deletingEventKey === event.event_key ? '...' : 'Remove'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -269,6 +577,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
+    padding: 20,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
+    borderBottomWidth: 1,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  modalCloseButton: {
+    padding: 8,
+  },
+  modalContent: {
     padding: 20,
   },
   section: {
@@ -356,6 +686,109 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  manageEventsButton: {
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  manageEventsButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  formModeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  formModeButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: 'rgba(128,128,128,0.12)',
+  },
+  formModeButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  formModeButtonTextActive: {
+    color: 'white',
+  },
+  modalFormBlock: {
+    gap: 10,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  modalTwoColumn: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalHalfInput: {
+    flex: 1,
+  },
+  modalPrimaryButton: {
+    marginTop: 14,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  modalPrimaryButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  eventRowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  eventRowInfo: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  eventRowTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  eventRowMeta: {
+    fontSize: 12,
+    marginTop: 3,
+  },
+  eventRowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  eventRowButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  eventRowButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  eventRowDeleteButton: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(220, 38, 38, 0.12)',
+  },
+  eventRowDeleteText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#dc2626',
   },
   accountRow: {
     borderWidth: 1,

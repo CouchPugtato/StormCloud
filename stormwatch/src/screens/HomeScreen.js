@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Platform,
   Dimensions,
@@ -11,6 +10,8 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,6 +39,7 @@ export default function HomeScreen({ navigation }) {
   const [matchesLoading, setMatchesLoading] = useState(false);
   const [epaData, setEpaData] = useState({});
   const [winProbabilities, setWinProbabilities] = useState({});
+  const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -434,24 +436,120 @@ export default function HomeScreen({ navigation }) {
       
       {isEventMode && <TwitchStream />}
       
-       <View style={styles.eventDropdownContainer}>
-         <Text style={[styles.eventsLabel, { color: theme.colors.text }]}>Events</Text>
-         {loading ? (
-           <ActivityIndicator size="small" color={theme.colors.primary} />
-         ) : (
-           <View style={styles.compactPickerContainer}>
-             <Picker
-               selectedValue={selectedEvent}
-               onValueChange={(itemValue) => setSelectedEvent(itemValue)}
-               style={styles.compactPicker}
-             >
-               {events.map(event => (
-                 <Picker.Item key={event.key} label={event.name} value={event.key} color="#000000" />
-               ))}
-             </Picker>
-           </View>
-         )}
-       </View>
+      <View style={styles.eventDropdownContainer}>
+        {loading ? (
+          <ActivityIndicator size="small" color={theme.colors.primary} />
+        ) : Platform.OS === 'web' ? (
+          <>
+            <TouchableOpacity
+              style={[
+                styles.compactPickerContainer,
+                styles.webSelectorButton,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                  shadowColor: theme.colors.shadow,
+                },
+              ]}
+              onPress={() => setEventDropdownOpen(true)}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[styles.webSelectorText, { color: theme.colors.text }]}
+                numberOfLines={1}
+              >
+                {events.find(event => event.key === selectedEvent)?.name || 'Select event'}
+              </Text>
+              <Ionicons
+                name="chevron-expand-outline"
+                size={22}
+                color={theme.colors.textSecondary}
+                style={styles.webSelectorChevron}
+              />
+            </TouchableOpacity>
+
+            <Modal
+              visible={eventDropdownOpen}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setEventDropdownOpen(false)}
+            >
+              <Pressable
+                style={styles.dropdownBackdrop}
+                onPress={() => setEventDropdownOpen(false)}
+              >
+                <Pressable
+                  style={[
+                    styles.dropdownMenu,
+                    {
+                      backgroundColor: theme.colors.surface,
+                      borderColor: theme.colors.border,
+                      shadowColor: theme.colors.shadow,
+                    },
+                  ]}
+                  onPress={() => {}}
+                >
+                  <FlatList
+                    data={events}
+                    keyExtractor={(item) => item.key}
+                    renderItem={({ item }) => {
+                      const isSelected = item.key === selectedEvent;
+                      return (
+                        <TouchableOpacity
+                          style={[
+                            styles.dropdownOption,
+                            isSelected && {
+                              backgroundColor: theme.colors.filterChip,
+                            },
+                          ]}
+                          onPress={() => {
+                            setSelectedEvent(item.key);
+                            setEventDropdownOpen(false);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.dropdownOptionText,
+                              {
+                                color: isSelected ? theme.colors.primary : theme.colors.text,
+                              },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {item.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }}
+                  />
+                </Pressable>
+              </Pressable>
+            </Modal>
+          </>
+        ) : (
+          <View
+            style={[
+              styles.compactPickerContainer,
+              {
+                backgroundColor: theme.colors.card || theme.colors.surface,
+                borderColor: theme.colors.border,
+                shadowColor: theme.colors.shadow,
+              },
+            ]}
+          >
+            <Picker
+              selectedValue={selectedEvent}
+              onValueChange={(itemValue) => setSelectedEvent(itemValue)}
+              dropdownIconColor={theme.colors.text}
+              style={[styles.compactPicker, { color: theme.colors.text }]}
+            >
+              {events.map(event => (
+                <Picker.Item key={event.key} label={event.name} value={event.key} color={theme.colors.text} />
+              ))}
+            </Picker>
+          </View>
+        )}
+      </View>
 
        <View style={styles.matchesSection}>
         <View style={[styles.tableHeader, { backgroundColor: theme.colors.surface }]}>
@@ -582,38 +680,67 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   eventDropdownContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 20,
     paddingHorizontal: 20,
   },
-  eventsLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginRight: 12,
-  },
   compactPickerContainer: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 6,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#d0d0d0',
-    borderTopColor: '#e8e8e8',
-    borderLeftColor: '#e8e8e8',
-    borderBottomColor: '#b8b8b8',
-    borderRightColor: '#b8b8b8',
-    shadowColor: '#000',
+    overflow: 'hidden',
     shadowOffset: {
-      width: 1,
-      height: 1,
+      width: 0,
+      height: 2,
     },
-    shadowOpacity: 0.2,
-    shadowRadius: 1,
-    elevation: 2,
-    minWidth: 120,
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    elevation: 3,
   },
   compactPicker: {
-    height: 35,
-    color: '#000000',
+    height: 50,
+    backgroundColor: 'transparent',
+  },
+  webSelectorButton: {
+    minHeight: 50,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  webSelectorText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  webSelectorChevron: {
+    marginLeft: 12,
+  },
+  dropdownBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  dropdownMenu: {
+    borderWidth: 1,
+    borderRadius: 16,
+    maxHeight: 360,
+    overflow: 'hidden',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  dropdownOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(128, 128, 128, 0.12)',
+  },
+  dropdownOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   sectionTitle: {
     fontSize: 20,
