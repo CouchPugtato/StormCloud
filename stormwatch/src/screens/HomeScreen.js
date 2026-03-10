@@ -93,6 +93,12 @@ export default function HomeScreen({ navigation }) {
           }
         };
 
+        const usesDoubleElimination = matchesData.some((match) => {
+          const level = (match.comp_level || '').toLowerCase();
+          const setNum = Number(match.set_number || 0);
+          return level === 'sf' && setNum > 2;
+        });
+
         const getMatchDisplayLabel = (match) => {
           const level = (match.comp_level || '').toLowerCase();
           const setNum = Number(match.set_number || 0);
@@ -102,6 +108,9 @@ export default function HomeScreen({ navigation }) {
             return `Quals ${matchNum}`;
           }
           if (level === 'sf') {
+            if (usesDoubleElimination) {
+              return `Round ${setNum}`;
+            }
             return `Semis ${setNum}`;
           }
           if (level === 'qf') {
