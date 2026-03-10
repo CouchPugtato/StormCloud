@@ -92,6 +92,7 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Post("/scout/submit", ScoutSubmit(db))
 
 		r.Post("/match-scouting", MatchScoutingSubmit(db))
+		r.Post("/alliance-scouting", AllianceScoutingSubmit(db))
 		r.Get("/match-scouting/{match_key}/{team_key}", MatchScoutingGet(db))
 		r.Get("/teams/{team_key}/match-scouting", TeamMatchScoutingGet(db))
 

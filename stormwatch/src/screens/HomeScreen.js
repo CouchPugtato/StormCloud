@@ -264,6 +264,13 @@ export default function HomeScreen({ navigation }) {
     });
   };
 
+  const navigateToAllianceScoutingForm = (allianceColor, matchData) => {
+    navigation.navigate('AllianceScoutingForm', {
+      allianceColor,
+      matchData,
+    });
+  };
+
   const renderMatch = ({ item }) => {
     const userScoutTeam = user ? Object.keys(item.scoutAssignments).find(team => 
       item.scoutAssignments[team] === user.id
@@ -430,6 +437,20 @@ export default function HomeScreen({ navigation }) {
             <Text style={[styles.notesTitle, { color: theme.colors.text }]}>
               Notes for {item.matchNumber}
             </Text>
+            <View style={styles.allianceScoutingButtons}>
+              <TouchableOpacity
+                style={[styles.allianceScoutingButton, { backgroundColor: '#DC3545' }]}
+                onPress={() => navigateToAllianceScoutingForm('red', item)}
+              >
+                <Text style={styles.allianceScoutingButtonText}>Scout Red Alliance</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.allianceScoutingButton, { backgroundColor: '#007BFF' }]}
+                onPress={() => navigateToAllianceScoutingForm('blue', item)}
+              >
+                <Text style={styles.allianceScoutingButtonText}>Scout Blue Alliance</Text>
+              </TouchableOpacity>
+            </View>
             <TextInput
               style={[styles.notesInput, { 
                 backgroundColor: theme.colors.background,
@@ -881,6 +902,24 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     minHeight: 80,
     marginBottom: 12,
+  },
+  allianceScoutingButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  allianceScoutingButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  allianceScoutingButtonText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   notesButtons: {
     flexDirection: 'row',

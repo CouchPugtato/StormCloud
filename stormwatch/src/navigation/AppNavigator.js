@@ -15,6 +15,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import ControlDashboardScreen from '../screens/ControlDashboardScreen';
 import PlatformDemoScreen from '../screens/PlatformDemoScreen';
 import MatchScoutingForm from '../components/MatchScoutingForm';
+import AllianceScoutingForm from '../components/AllianceScoutingForm';
 import PitScoutingForm from '../components/PitScoutingForm';
 
 const Tab = createBottomTabNavigator();
@@ -38,6 +39,11 @@ function HomeStack() {
       <Stack.Screen 
         name="MatchScoutingForm" 
         component={MatchScoutingForm} 
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="AllianceScoutingForm"
+        component={AllianceScoutingForm}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

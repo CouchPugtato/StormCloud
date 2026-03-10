@@ -91,6 +91,13 @@ class ApiService {
     });
   }
 
+  async submitAllianceScoutingData(data) {
+    return this.request('/alliance-scouting', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async getMatchScoutingData(matchKey, teamKey) {
     return this.request(`/match-scouting/${matchKey}/${teamKey}`);
   }

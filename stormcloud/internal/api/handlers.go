@@ -1287,6 +1287,60 @@ func MatchScoutingGet(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+func AllianceScoutingSubmit(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var data struct {
+			MatchKey      string `json:"match_key"`
+			AllianceColor string `json:"alliance_color"`
+			ScoutName     string `json:"scout_name"`
+			GeneralInfo   string `json:"general_info"`
+			Notes         string `json:"notes"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+
+		data.MatchKey = strings.TrimSpace(data.MatchKey)
+		data.AllianceColor = strings.ToLower(strings.TrimSpace(data.AllianceColor))
+		data.ScoutName = strings.TrimSpace(data.ScoutName)
+		data.GeneralInfo = strings.TrimSpace(data.GeneralInfo)
+		data.Notes = strings.TrimSpace(data.Notes)
+
+		if data.MatchKey == "" {
+			writeJSON(w, 400, map[string]string{"error": "match_key is required"})
+			return
+		}
+		if data.AllianceColor != "red" && data.AllianceColor != "blue" {
+			writeJSON(w, 400, map[string]string{"error": "alliance_color must be red or blue"})
+			return
+		}
+
+		var exists int
+		if err := db.QueryRow(`SELECT COUNT(1) FROM matches WHERE match_key=?`, data.MatchKey).Scan(&exists); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if exists == 0 {
+			writeJSON(w, 404, map[string]string{"error": "match not found"})
+			return
+		}
+
+		_, err := db.Exec(`
+			INSERT OR REPLACE INTO alliance_scouting_data (
+				match_key, alliance_color, scout_name, general_info, notes
+			) VALUES (?, ?, ?, ?, ?)
+		`, data.MatchKey, data.AllianceColor, data.ScoutName, data.GeneralInfo, data.Notes)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{"ok": true})
+	}
+}
+
 func TeamMatchScoutingGet(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		teamKey := chi.URLParam(r, "team_key")
