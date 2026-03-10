@@ -84,6 +84,7 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Get("/managed-events", ManagedEventsList(db))
 		r.Post("/managed-events/add-from-tba", ManagedEventAddFromTBA(db, syncService))
 		r.Post("/managed-events/add-manual", ManagedEventAddManual(db))
+		r.Post("/managed-events/add-match", ManagedEventAddManualMatch(db))
 		r.Post("/managed-events/sync-matches", ManagedEventSyncMatches(db, syncService))
 		r.Post("/managed-events/delete", ManagedEventDelete(db))
 

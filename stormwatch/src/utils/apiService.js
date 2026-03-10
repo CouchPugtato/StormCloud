@@ -288,6 +288,13 @@ class ApiService {
     });
   }
 
+  async addManagedEventMatch(payload) {
+    return this.request('/managed-events/add-match', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async syncManagedEventMatches(eventKey) {
     return this.request('/managed-events/sync-matches', {
       method: 'POST',

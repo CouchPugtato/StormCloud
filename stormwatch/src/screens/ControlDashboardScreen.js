@@ -32,6 +32,8 @@ export default function ControlDashboardScreen() {
   const [managedEvents, setManagedEvents] = useState([]);
   const [managedEventsLoading, setManagedEventsLoading] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
+  const [addingMatch, setAddingMatch] = useState(false);
+  const [selectedMatchEvent, setSelectedMatchEvent] = useState(null);
   const [syncingEventKey, setSyncingEventKey] = useState('');
   const [deletingEventKey, setDeletingEventKey] = useState('');
   const [eventModeForm, setEventModeForm] = useState('tba');
@@ -45,6 +47,19 @@ export default function ControlDashboardScreen() {
     country: '',
     start_date: '',
     end_date: '',
+  });
+  const [manualMatchForm, setManualMatchForm] = useState({
+    comp_level: 'qm',
+    set_number: '1',
+    match_number: '',
+    red1: '',
+    red2: '',
+    red3: '',
+    blue1: '',
+    blue2: '',
+    blue3: '',
+    red_score: '',
+    blue_score: '',
   });
 
   const upgradableRoleOptions = [
@@ -160,6 +175,22 @@ export default function ControlDashboardScreen() {
     });
   };
 
+  const resetManualMatchForm = () => {
+    setManualMatchForm({
+      comp_level: 'qm',
+      set_number: '1',
+      match_number: '',
+      red1: '',
+      red2: '',
+      red3: '',
+      blue1: '',
+      blue2: '',
+      blue3: '',
+      red_score: '',
+      blue_score: '',
+    });
+  };
+
   const handleAddManagedEvent = async () => {
     if (addingEvent) {
       return;
@@ -220,6 +251,64 @@ export default function ControlDashboardScreen() {
       Alert.alert('Error', error.message || 'Unable to remove event.');
     } finally {
       setDeletingEventKey('');
+    }
+  };
+
+  const openMatchModal = (event) => {
+    setSelectedMatchEvent(event);
+    resetManualMatchForm();
+  };
+
+  const handleAddManualMatch = async () => {
+    if (!selectedMatchEvent || addingMatch) {
+      return;
+    }
+
+    const parseTeam = (value) => Number(String(value).trim());
+    const redTeams = [manualMatchForm.red1, manualMatchForm.red2, manualMatchForm.red3].map(parseTeam);
+    const blueTeams = [manualMatchForm.blue1, manualMatchForm.blue2, manualMatchForm.blue3].map(parseTeam);
+    const matchNumber = Number(manualMatchForm.match_number);
+    const setNumber = Number(manualMatchForm.set_number || 0);
+
+    if (
+      !Number.isInteger(matchNumber) ||
+      matchNumber <= 0 ||
+      !Number.isInteger(setNumber) ||
+      setNumber < 0 ||
+      redTeams.some((teamNum) => !Number.isInteger(teamNum) || teamNum <= 0) ||
+      blueTeams.some((teamNum) => !Number.isInteger(teamNum) || teamNum <= 0)
+    ) {
+      Alert.alert('Error', 'Enter a valid match number, series number, and six valid team numbers.');
+      return;
+    }
+
+    if (
+      (manualMatchForm.red_score.trim() !== '' && Number.isNaN(Number(manualMatchForm.red_score))) ||
+      (manualMatchForm.blue_score.trim() !== '' && Number.isNaN(Number(manualMatchForm.blue_score)))
+    ) {
+      Alert.alert('Error', 'Scores must be blank or numeric.');
+      return;
+    }
+
+    setAddingMatch(true);
+    try {
+      await apiService.addManagedEventMatch({
+        event_key: selectedMatchEvent.event_key,
+        comp_level: manualMatchForm.comp_level,
+        set_number: setNumber,
+        match_number: matchNumber,
+        red_teams: redTeams,
+        blue_teams: blueTeams,
+        red_score: manualMatchForm.red_score.trim() === '' ? null : Number(manualMatchForm.red_score),
+        blue_score: manualMatchForm.blue_score.trim() === '' ? null : Number(manualMatchForm.blue_score),
+      });
+      setSelectedMatchEvent(null);
+      resetManualMatchForm();
+      Alert.alert('Success', 'Manual match added.');
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to add manual match.');
+    } finally {
+      setAddingMatch(false);
     }
   };
 
@@ -378,7 +467,13 @@ export default function ControlDashboardScreen() {
         <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
           <View style={[styles.modalHeader, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
             <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Manage Events</Text>
-            <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowEventsModal(false)}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => {
+                setShowEventsModal(false);
+                setSelectedMatchEvent(null);
+              }}
+            >
               <Ionicons name="close" size={24} color={theme.colors.text} />
             </TouchableOpacity>
           </View>
@@ -507,6 +602,130 @@ export default function ControlDashboardScreen() {
               </TouchableOpacity>
             </View>
 
+            {selectedMatchEvent && (
+              <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+                <View style={styles.inlineSectionHeader}>
+                  <View>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text, marginBottom: 2 }]}>Add Manual Match</Text>
+                    <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+                      {selectedMatchEvent.name || selectedMatchEvent.event_key}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.eventRowButton, { borderColor: theme.colors.border }]}
+                    onPress={() => setSelectedMatchEvent(null)}
+                  >
+                    <Text style={[styles.eventRowButtonText, { color: theme.colors.text }]}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.formModeRow}>
+                  {[
+                    { key: 'qm', label: 'Quals' },
+                    { key: 'qf', label: 'QF' },
+                    { key: 'sf', label: 'Semis' },
+                    { key: 'f', label: 'Finals' },
+                  ].map((option) => (
+                    <TouchableOpacity
+                      key={option.key}
+                      style={[styles.formModeButton, manualMatchForm.comp_level === option.key && { backgroundColor: theme.colors.primary }]}
+                      onPress={() => setManualMatchForm((prev) => ({ ...prev, comp_level: option.key }))}
+                    >
+                      <Text
+                        style={[
+                          styles.formModeButtonText,
+                          { color: theme.colors.text },
+                          manualMatchForm.comp_level === option.key && styles.formModeButtonTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={styles.modalTwoColumn}>
+                  <TextInput
+                    style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    value={manualMatchForm.set_number}
+                    onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, set_number: text }))}
+                    placeholder="Series"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    value={manualMatchForm.match_number}
+                    onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, match_number: text }))}
+                    placeholder="Match Number"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <Text style={[styles.modalSectionLabel, { color: theme.colors.textSecondary }]}>Red Alliance</Text>
+                <View style={styles.modalThreeColumn}>
+                  {['red1', 'red2', 'red3'].map((field, index) => (
+                    <TextInput
+                      key={field}
+                      style={[styles.modalInput, styles.modalThirdInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                      value={manualMatchForm[field]}
+                      onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, [field]: text }))}
+                      placeholder={`Red ${index + 1}`}
+                      placeholderTextColor={theme.colors.textSecondary}
+                      keyboardType="numeric"
+                    />
+                  ))}
+                </View>
+
+                <Text style={[styles.modalSectionLabel, { color: theme.colors.textSecondary }]}>Blue Alliance</Text>
+                <View style={styles.modalThreeColumn}>
+                  {['blue1', 'blue2', 'blue3'].map((field, index) => (
+                    <TextInput
+                      key={field}
+                      style={[styles.modalInput, styles.modalThirdInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                      value={manualMatchForm[field]}
+                      onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, [field]: text }))}
+                      placeholder={`Blue ${index + 1}`}
+                      placeholderTextColor={theme.colors.textSecondary}
+                      keyboardType="numeric"
+                    />
+                  ))}
+                </View>
+
+                <Text style={[styles.modalSectionLabel, { color: theme.colors.textSecondary }]}>Scores</Text>
+                <View style={styles.modalTwoColumn}>
+                  <TextInput
+                    style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    value={manualMatchForm.red_score}
+                    onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, red_score: text }))}
+                    placeholder="Red score"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    style={[styles.modalInput, styles.modalHalfInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
+                    value={manualMatchForm.blue_score}
+                    onChangeText={(text) => setManualMatchForm((prev) => ({ ...prev, blue_score: text }))}
+                    placeholder="Blue score"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <Text style={[styles.sectionNote, styles.leftAlignedNote, { color: theme.colors.textSecondary }]}>
+                  Leave scores blank if the match has not been played yet.
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.modalPrimaryButton, { backgroundColor: theme.colors.primary }, addingMatch && styles.disabledButton]}
+                  onPress={handleAddManualMatch}
+                  disabled={addingMatch}
+                >
+                  <Text style={styles.modalPrimaryButtonText}>{addingMatch ? 'Saving...' : 'Add Match'}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Current Events</Text>
               {managedEventsLoading ? (
@@ -535,6 +754,14 @@ export default function ControlDashboardScreen() {
                         </TouchableOpacity>
                       )}
                       <TouchableOpacity
+                        style={[styles.eventRowButton, { borderColor: theme.colors.border }]}
+                        onPress={() => openMatchModal(event)}
+                      >
+                        <Text style={[styles.eventRowButtonText, { color: theme.colors.text }]}>
+                          Add Match
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
                         style={[styles.eventRowDeleteButton, deletingEventKey === event.event_key && styles.disabledButton]}
                         onPress={() => handleDeleteManagedEvent(event.event_key)}
                         disabled={deletingEventKey === event.event_key}
@@ -549,6 +776,7 @@ export default function ControlDashboardScreen() {
           </ScrollView>
         </View>
       </Modal>
+
     </View>
   );
 }
@@ -595,11 +823,22 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
   },
+  modalSubtitle: {
+    fontSize: 13,
+    marginTop: 4,
+  },
   modalCloseButton: {
     padding: 8,
   },
   modalContent: {
     padding: 20,
+  },
+  inlineSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
   },
   section: {
     borderRadius: 12,
@@ -616,6 +855,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     textAlign: 'center',
+  },
+  leftAlignedNote: {
+    textAlign: 'left',
   },
   preferenceRow: {
     flexDirection: 'row',
@@ -730,8 +972,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
+  modalThreeColumn: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   modalHalfInput: {
     flex: 1,
+  },
+  modalThirdInput: {
+    flex: 1,
+  },
+  modalSectionLabel: {
+    marginTop: 14,
+    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: '700',
   },
   modalPrimaryButton: {
     marginTop: 14,

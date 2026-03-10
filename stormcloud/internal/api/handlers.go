@@ -538,6 +538,162 @@ func ManagedEventDelete(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+func ManagedEventAddManualMatch(db *sql.DB) http.HandlerFunc {
+	type in struct {
+		EventKey    string `json:"event_key"`
+		MatchKey    string `json:"match_key"`
+		CompLevel   string `json:"comp_level"`
+		SetNumber   int    `json:"set_number"`
+		MatchNumber int    `json:"match_number"`
+		TimeReal    *int64 `json:"time_real"`
+		TimePred    *int64 `json:"time_pred"`
+		BlueTeams   []int  `json:"blue_teams"`
+		RedTeams    []int  `json:"red_teams"`
+		BlueScore   *int   `json:"blue_score"`
+		RedScore    *int   `json:"red_score"`
+	}
+
+	validCompLevels := map[string]bool{
+		"qm": true,
+		"ef": true,
+		"qf": true,
+		"sf": true,
+		"f":  true,
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+
+		payload.EventKey = strings.TrimSpace(payload.EventKey)
+		payload.MatchKey = strings.TrimSpace(payload.MatchKey)
+		payload.CompLevel = strings.ToLower(strings.TrimSpace(payload.CompLevel))
+		if payload.EventKey == "" {
+			writeJSON(w, 400, map[string]string{"error": "event_key is required"})
+			return
+		}
+		if !validCompLevels[payload.CompLevel] {
+			writeJSON(w, 400, map[string]string{"error": "comp_level must be qm, ef, qf, sf, or f"})
+			return
+		}
+		if payload.MatchNumber <= 0 {
+			writeJSON(w, 400, map[string]string{"error": "match_number must be greater than 0"})
+			return
+		}
+		if len(payload.RedTeams) != 3 || len(payload.BlueTeams) != 3 {
+			writeJSON(w, 400, map[string]string{"error": "three red teams and three blue teams are required"})
+			return
+		}
+
+		for _, teamNum := range append(append([]int{}, payload.RedTeams...), payload.BlueTeams...) {
+			if teamNum <= 0 {
+				writeJSON(w, 400, map[string]string{"error": "team numbers must be greater than 0"})
+				return
+			}
+		}
+
+		var managedCount int
+		if err := db.QueryRow(`SELECT COUNT(1) FROM managed_events WHERE event_key=?`, payload.EventKey).Scan(&managedCount); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if managedCount == 0 {
+			writeJSON(w, 400, map[string]string{"error": "event is not managed"})
+			return
+		}
+
+		if payload.MatchKey == "" {
+			if payload.CompLevel == "qm" {
+				payload.MatchKey = fmt.Sprintf("%s_qm%d", payload.EventKey, payload.MatchNumber)
+			} else {
+				payload.MatchKey = fmt.Sprintf("%s_%s%dm%d", payload.EventKey, payload.CompLevel, payload.SetNumber, payload.MatchNumber)
+			}
+		}
+
+		blueTeams := make([]string, 0, len(payload.BlueTeams))
+		redTeams := make([]string, 0, len(payload.RedTeams))
+		for _, teamNum := range payload.BlueTeams {
+			blueTeams = append(blueTeams, fmt.Sprintf("frc%d", teamNum))
+		}
+		for _, teamNum := range payload.RedTeams {
+			redTeams = append(redTeams, fmt.Sprintf("frc%d", teamNum))
+		}
+
+		blueTeamsJSON, _ := json.Marshal(blueTeams)
+		redTeamsJSON, _ := json.Marshal(redTeams)
+
+		tx, err := db.Begin()
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		for _, teamNum := range append(append([]int{}, payload.RedTeams...), payload.BlueTeams...) {
+			teamKey := fmt.Sprintf("frc%d", teamNum)
+			if _, err := tx.Exec(`
+				INSERT OR IGNORE INTO teams(team_key, team_num, name, last_synced)
+				VALUES(?,?,?,?)
+			`, teamKey, teamNum, fmt.Sprintf("Team %d", teamNum), time.Now().Unix()); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+
+		var timeReal any
+		if payload.TimeReal != nil && *payload.TimeReal > 0 {
+			timeReal = *payload.TimeReal
+		}
+		var timePred any
+		if payload.TimePred != nil && *payload.TimePred > 0 {
+			timePred = *payload.TimePred
+		}
+		var blueScore any
+		if payload.BlueScore != nil {
+			blueScore = *payload.BlueScore
+		}
+		var redScore any
+		if payload.RedScore != nil {
+			redScore = *payload.RedScore
+		}
+
+		if _, err := tx.Exec(`
+			INSERT OR REPLACE INTO matches(
+				match_key, event_key, comp_level, set_number, match_number,
+				time_real, time_pred, blue_teams, red_teams, blue_score, red_score
+			)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?)
+		`, payload.MatchKey, payload.EventKey, payload.CompLevel, payload.SetNumber, payload.MatchNumber, timeReal, timePred, string(blueTeamsJSON), string(redTeamsJSON), blueScore, redScore); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"ok":        true,
+			"event_key": payload.EventKey,
+			"match_key": payload.MatchKey,
+		})
+	}
+}
+
 // --- PICK LIST
 
 // PickListGet returns the pick list items for an optional event_key, ordered by rank
@@ -739,18 +895,27 @@ func EventMatches(db *sql.DB) http.HandlerFunc {
 			TimePred    int64    `json:"time_pred"`
 			BlueTeams   []string `json:"blue_teams"`
 			RedTeams    []string `json:"red_teams"`
-			BlueScore   int      `json:"blue_score"`
-			RedScore    int      `json:"red_score"`
+			BlueScore   *int     `json:"blue_score"`
+			RedScore    *int     `json:"red_score"`
 		}
 		var out []Match
 		for rows.Next() {
 			var m Match
 			var blueJSON, redJSON string
+			var blueScore, redScore sql.NullInt64
 			_ = rows.Scan(&m.MatchKey, &m.CompLevel, &m.SetNumber, &m.MatchNumber,
-				&m.TimeReal, &m.TimePred, &blueJSON, &redJSON, &m.BlueScore, &m.RedScore)
+				&m.TimeReal, &m.TimePred, &blueJSON, &redJSON, &blueScore, &redScore)
 
 			json.Unmarshal([]byte(blueJSON), &m.BlueTeams)
 			json.Unmarshal([]byte(redJSON), &m.RedTeams)
+			if blueScore.Valid && blueScore.Int64 >= 0 {
+				v := int(blueScore.Int64)
+				m.BlueScore = &v
+			}
+			if redScore.Valid && redScore.Int64 >= 0 {
+				v := int(redScore.Int64)
+				m.RedScore = &v
+			}
 
 			out = append(out, m)
 		}
