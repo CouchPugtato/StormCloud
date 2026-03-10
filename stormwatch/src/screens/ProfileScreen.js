@@ -28,6 +28,7 @@ export default function ProfileScreen() {
   const [selectedEvent, setSelectedEvent] = useState('2024week1');
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
   const [authMessageType, setAuthMessageType] = useState('error');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -187,22 +188,7 @@ export default function ProfileScreen() {
   };
 
   const handleSignOut = () => {
-    if (Platform.OS === 'web') {
-      const confirmed = typeof window !== 'undefined' ? window.confirm('Are you sure you want to sign out?') : true;
-      if (confirmed) {
-        signOut();
-      }
-      return;
-    }
-
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign Out', style: 'destructive', onPress: signOut },
-      ]
-    );
+    setShowSignOutModal(true);
   };
 
   const renderAuthForm = () => (
@@ -857,6 +843,34 @@ export default function ProfileScreen() {
           renderProfile()
         )}
       </ScrollView>
+
+      {showSignOutModal && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.confirmModalContent, { backgroundColor: theme.colors.surface }]}>
+            <Text style={[styles.confirmModalTitle, { color: theme.colors.text }]}>Sign Out?</Text>
+            <Text style={[styles.confirmModalText, { color: theme.colors.textSecondary }]}>
+              Are you sure you want to sign out?
+            </Text>
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity
+                style={[styles.confirmSecondaryButton, { borderColor: theme.colors.border, backgroundColor: theme.colors.background }]}
+                onPress={() => setShowSignOutModal(false)}
+              >
+                <Text style={[styles.confirmSecondaryText, { color: theme.colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmPrimaryButton, styles.confirmDangerButton]}
+                onPress={() => {
+                  setShowSignOutModal(false);
+                  signOut();
+                }}
+              >
+                <Text style={styles.confirmPrimaryText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -1270,6 +1284,54 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     width: '100%',
+  },
+  confirmModalContent: {
+    width: '90%',
+    maxWidth: 360,
+    borderRadius: 12,
+    padding: 20,
+    ...platformUtils.getPlatformElevation(5),
+  },
+  confirmModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  confirmModalText: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+  },
+  confirmModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  confirmSecondaryButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  confirmPrimaryButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmDangerButton: {
+    backgroundColor: '#dc2626',
+  },
+  confirmPrimaryText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '700',
   },
   closeButton: {
     position: 'absolute',
