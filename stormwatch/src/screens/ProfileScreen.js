@@ -509,10 +509,9 @@ export default function ProfileScreen() {
   );
 
   const renderLeaderboard = () => {
-    const leaderboardData = getLeaderboard(leaderboardType, selectedEvent);
-
     return (
       <View style={styles.leaderboardContainer}>
+        <Text style={[styles.sectionHeaderTitle, { color: theme.colors.text }]}>Leaderboard</Text>
         <View style={styles.leaderboardFilters}>
           <View style={styles.filterRow}>
             <TouchableOpacity
@@ -568,70 +567,94 @@ export default function ProfileScreen() {
               ))}
             </ScrollView>
           )}
-        </View>
+          </View>
 
-        <View style={styles.scrollableLeaderboard}>
-          <FlatList
-            data={leaderboardData}
-            keyExtractor={(item) => item.id}
-            showsVerticalScrollIndicator={true}
-            renderItem={({ item }) => {
-              const getRankStyle = (rank) => {
-                if (rank === 1) return { borderColor: '#FFD700', borderWidth: 3 }; // Gold
-                if (rank === 2) return { borderColor: '#C0C0C0', borderWidth: 3 }; // Silver
-                if (rank === 3) return { borderColor: '#CD7F32', borderWidth: 3 }; // Bronze
-                return { borderColor: item.id === user?.id ? theme.colors.primary : theme.colors.border, borderWidth: 2 };
-              };
-              
-              const getRankIcon = (rank) => {
-                if (rank === 1) return { name: 'trophy', color: '#FFD700' };
-                if (rank === 2) return { name: 'medal', color: '#C0C0C0' };
-                if (rank === 3) return { name: 'medal', color: '#CD7F32' };
-                return { name: item.id === user?.id ? "person-circle" : "person", color: item.id === user?.id ? theme.colors.primary : theme.colors.textSecondary };
-              };
-              
-              const rankIcon = getRankIcon(item.rank);
-              
-              return (
-                <View style={[styles.leaderboardItem, { 
-                  backgroundColor: theme.colors.surface,
-                  ...getRankStyle(item.rank)
-                }]}>
-                  <View style={styles.rankContainer}>
-                    <Text style={[styles.rank, { 
-                      color: item.rank <= 3 ? (item.rank === 1 ? '#FFD700' : item.rank === 2 ? '#C0C0C0' : '#CD7F32') : theme.colors.text,
-                      fontSize: item.rank <= 3 ? 20 : 18
-                    }]}>#{item.rank}</Text>
+        <View>
+          {leaderboardData.length === 0 ? (
+            <View style={styles.emptyLeaderboard}>
+              <Ionicons name="trophy-outline" size={48} color={theme.colors.textSecondary} />
+              <Text style={[styles.emptyLeaderboardText, { color: theme.colors.textSecondary }]}>
+                No scouting data available
+              </Text>
+            </View>
+          ) : (
+            <>
+              {leaderboardData.map((item) => {
+                const getRankStyle = (rank) => {
+                  if (rank === 1) return { borderColor: '#FFD700', borderWidth: 3 };
+                  if (rank === 2) return { borderColor: '#C0C0C0', borderWidth: 3 };
+                  if (rank === 3) return { borderColor: '#CD7F32', borderWidth: 3 };
+                  return { borderColor: item.id === user?.id ? theme.colors.primary : theme.colors.border, borderWidth: 2 };
+                };
+
+                const getRankIcon = (rank) => {
+                  if (rank === 1) return { name: 'trophy', color: '#FFD700' };
+                  if (rank === 2) return { name: 'medal', color: '#C0C0C0' };
+                  if (rank === 3) return { name: 'medal', color: '#CD7F32' };
+                  return {
+                    name: item.id === user?.id ? 'person-circle' : 'person',
+                    color: item.id === user?.id ? theme.colors.primary : theme.colors.textSecondary,
+                  };
+                };
+
+                const rankIcon = getRankIcon(item.rank);
+
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.leaderboardItem,
+                      {
+                        backgroundColor: theme.colors.surface,
+                        ...getRankStyle(item.rank),
+                      },
+                    ]}
+                  >
+                    <View style={styles.rankContainer}>
+                      <Text
+                        style={[
+                          styles.rank,
+                          {
+                            color: item.rank <= 3 ? (item.rank === 1 ? '#FFD700' : item.rank === 2 ? '#C0C0C0' : '#CD7F32') : theme.colors.text,
+                            fontSize: item.rank <= 3 ? 20 : 18,
+                          },
+                        ]}
+                      >
+                        #{item.rank}
+                      </Text>
+                    </View>
+                    <View style={styles.userInfo}>
+                      <Ionicons
+                        name={rankIcon.name}
+                        size={item.rank <= 3 ? 28 : 24}
+                        color={rankIcon.color}
+                      />
+                      <Text
+                        style={[
+                          styles.userName,
+                          {
+                            color: theme.colors.text,
+                            fontWeight: item.id === user?.id || item.rank <= 3 ? 'bold' : 'normal',
+                          },
+                        ]}
+                      >
+                        {item.name}
+                      </Text>
+                    </View>
+                    <View style={styles.matchCount}>
+                      <Text style={[styles.matchCountText, { color: theme.colors.text }]}>
+                        {item.matchCount}
+                      </Text>
+                      <Text style={[styles.matchCountLabel, { color: theme.colors.textSecondary }]}>matches</Text>
+                    </View>
                   </View>
-                  <View style={styles.userInfo}>
-                    <Ionicons 
-                      name={rankIcon.name}
-                      size={item.rank <= 3 ? 28 : 24} 
-                      color={rankIcon.color}
-                    />
-                    <Text style={[styles.userName, { 
-                      color: theme.colors.text,
-                      fontWeight: item.id === user?.id || item.rank <= 3 ? 'bold' : 'normal'
-                    }]}>{item.name}</Text>
-                  </View>
-                  <View style={styles.matchCount}>
-                    <Text style={[styles.matchCountText, { color: theme.colors.text }]}>
-                      {item.matchCount}
-                    </Text>
-                    <Text style={[styles.matchCountLabel, { color: theme.colors.textSecondary }]}>matches</Text>
-                  </View>
-                </View>
-              );
-            }}
-            ListEmptyComponent={
-              <View style={styles.emptyLeaderboard}>
-                <Ionicons name="trophy-outline" size={48} color={theme.colors.textSecondary} />
-                <Text style={[styles.emptyLeaderboardText, { color: theme.colors.textSecondary }]}>
-                  No scouting data available
-                </Text>
-              </View>
-            }
-          />
+                );
+              })}
+              <Text style={[styles.topCountText, { color: theme.colors.textSecondary }]}>
+                Showing top {leaderboardData.length}
+              </Text>
+            </>
+          )}
         </View>
       </View>
     );
@@ -769,7 +792,7 @@ export default function ProfileScreen() {
             <Text style={styles.signInButtonText}>Sign In</Text>
           </TouchableOpacity>
         </View>
-        <ScrollView style={styles.content}>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {renderLeaderboard()}
           {renderUpcomingMatches()}
           {renderMyStatistics()}
@@ -819,7 +842,7 @@ export default function ProfileScreen() {
           <Text style={[styles.tabText,
             activeTab === 'leaderboard' && { color: 'white' },
             { color: theme.colors.text }
-          ]}>Leaderboard</Text>
+          ]}>Scouting</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'profile' && { backgroundColor: theme.colors.primary }]}
@@ -832,11 +855,11 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {activeTab === 'leaderboard' ? (
           <View>
-            {renderLeaderboard()}
             {renderUpcomingMatches()}
+            {renderLeaderboard()}
             {renderMyStatistics()}
           </View>
         ) : (
@@ -1149,6 +1172,16 @@ const styles = StyleSheet.create({
   },
   leaderboardContainer: {
     padding: 20,
+    paddingTop: 28,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.12)',
+  },
+  sectionHeaderTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 18,
+    textAlign: 'center',
   },
   leaderboardFilters: {
     marginBottom: 20,
@@ -1367,9 +1400,11 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 12,
   },
-  scrollableLeaderboard: {
-    height: 300,
-    marginBottom: 10,
+  topCountText: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 4,
   },
   upcomingMatchesContainer: {
     paddingVertical: 20,
@@ -1379,7 +1414,7 @@ const styles = StyleSheet.create({
     marginTop: 15,
   },
   upcomingMatchesTitle: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 15,
     textAlign: 'center',
