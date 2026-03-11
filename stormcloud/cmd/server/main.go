@@ -54,10 +54,6 @@ func main() {
 	syncService.SetAPIKeys(tbaKey, statboticsKey)
 	syncService.SetCurrentYear(currentYear)
 
-	if err := syncService.LoadEventsConfig("./events_config.json"); err != nil {
-		log.Printf("Failed to load events config: %v", err)
-	}
-
 	log.Println("Running initial sync on startup...")
 	if err := syncService.FullSync(); err != nil {
 		log.Printf("Initial sync failed: %v", err)

@@ -4,26 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"os"
 	"time"
 
 	"github.com/CouchPugtato/StormCloud/internal/models"
 )
-
-type SyncSettings struct {
-	SyncAllTeams       bool `json:"sync_all_teams"`
-	SyncEventTeamsOnly bool `json:"sync_event_teams_only"`
-	EnableEPASync      bool `json:"enable_epa_sync"`
-	CurrentYear        int  `json:"current_year"`
-}
-
-type EventsConfig struct {
-	SyncSettings   SyncSettings `json:"sync_settings"`
-	TBAKeys        []string     `json:"tba_keys"`
-	StatboticsKeys []string     `json:"statbotics_keys"`
-}
 
 type SyncService struct {
 	db           *sql.DB
@@ -32,7 +17,6 @@ type SyncService struct {
 	tbaAPIKey    string
 	sbAPIKey     string
 	currentYear  int
-	eventsConfig *EventsConfig
 }
 
 type RateLimiter struct {
@@ -54,27 +38,6 @@ func (rl *RateLimiter) Wait() {
 	rl.lastRequest = time.Now()
 }
 
-func (s *SyncService) LoadEventsConfig(configPath string) error {
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.Printf("Events config file not found at %s, using default sync behavior", configPath)
-		return nil
-	}
-
-	data, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read events config: %w", err)
-	}
-
-	var config EventsConfig
-	if err := json.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("failed to parse events config: %w", err)
-	}
-
-	s.eventsConfig = &config
-	log.Printf("Loaded events config with %d TBA keys and %d Statbotics keys", len(config.TBAKeys), len(config.StatboticsKeys))
-	return nil
-}
-
 func NewSyncService(db *sql.DB) *SyncService {
 	return &SyncService{
 		db:          db,
@@ -93,69 +56,45 @@ func (s *SyncService) SetCurrentYear(year int) {
 	s.currentYear = year
 }
 
+func (s *SyncService) getManagedEventKeys() ([]string, error) {
+	rows, err := s.db.Query(`SELECT event_key FROM managed_events ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query managed events: %w", err)
+	}
+	defer rows.Close()
+
+	var eventKeys []string
+	for rows.Next() {
+		var eventKey string
+		if err := rows.Scan(&eventKey); err != nil {
+			return nil, fmt.Errorf("failed to scan managed event: %w", err)
+		}
+		if eventKey != "" {
+			eventKeys = append(eventKeys, eventKey)
+		}
+	}
+	return eventKeys, nil
+}
+
 func (s *SyncService) SyncTeams(year int) error {
-	if s.eventsConfig != nil && s.eventsConfig.SyncSettings.SyncEventTeamsOnly {
-		return s.SyncTeamsFromEvents()
-	}
-
-	log.Printf("Starting team sync for year %d", year)
-
-	page := 0
-	for {
-		log.Printf("[TBA] Fetching teams page %d", page)
-		s.tbaLimiter.Wait()
-		code, body, _, err := TBAGet(fmt.Sprintf("/teams/%d", page), s.tbaAPIKey)
-		if err != nil {
-			return fmt.Errorf("[TBA] Teams request failed: %w", err)
-		}
-		if code != 200 {
-			return fmt.Errorf("[TBA] Teams request returned %d", code)
-		}
-
-		var tbaTeams []models.TBATeam
-		if err := json.Unmarshal(body, &tbaTeams); err != nil {
-			return fmt.Errorf("failed to parse TBA teams: %w", err)
-		}
-
-		if len(tbaTeams) == 0 {
-			break
-		}
-
-		for _, tbaTeam := range tbaTeams {
-			team := models.Team{
-				TeamKey:    tbaTeam.Key,
-				TeamNum:    tbaTeam.TeamNumber,
-				Name:       tbaTeam.Nickname,
-				City:       tbaTeam.City,
-				State:      tbaTeam.StateProv,
-				Country:    tbaTeam.Country,
-				RookieYear: tbaTeam.RookieYear,
-				LastSynced: time.Now(),
-			}
-
-			if err := s.storeTeam(team); err != nil {
-				log.Printf("Failed to store team %s: %v", team.TeamKey, err)
-				continue
-			}
-		}
-
-		page++
-	}
-
-	log.Printf("[TBA] Team sync completed for year %d", year)
-	return nil
+	return s.SyncTeamsFromEvents()
 }
 
 func (s *SyncService) SyncTeamsFromEvents() error {
-	if s.eventsConfig == nil {
-		return fmt.Errorf("no events configuration loaded")
+	eventKeys, err := s.getManagedEventKeys()
+	if err != nil {
+		return err
+	}
+	if len(eventKeys) == 0 {
+		log.Printf("No managed events configured, skipping team sync")
+		return nil
 	}
 
-	log.Printf("Starting event-based team sync for %d events", len(s.eventsConfig.TBAKeys))
+	log.Printf("Starting event-based team sync for %d managed events", len(eventKeys))
 
 	teamsSeen := make(map[string]bool)
 
-	for _, tbaKey := range s.eventsConfig.TBAKeys {
+	for _, tbaKey := range eventKeys {
 		log.Printf("Syncing teams from event: %s", tbaKey)
 
 		log.Printf("[TBA] Fetching teams for event %s", tbaKey)
@@ -208,14 +147,18 @@ func (s *SyncService) SyncTeamsFromEvents() error {
 
 func (s *SyncService) SyncEPAForExistingTeams(year int) error {
 	log.Printf("Starting EPA sync for existing teams (year %d)", year)
-
-	if s.eventsConfig == nil {
-		return fmt.Errorf("no events configuration loaded")
+	eventKeys, err := s.getManagedEventKeys()
+	if err != nil {
+		return err
+	}
+	if len(eventKeys) == 0 {
+		log.Printf("No managed events configured, skipping EPA sync")
+		return nil
 	}
 
 	eventTeams := make(map[int]bool)
 
-	for _, tbaKey := range s.eventsConfig.TBAKeys {
+	for _, tbaKey := range eventKeys {
 		log.Printf("[TBA] Fetching teams for event %s to build EPA sync list", tbaKey)
 		s.tbaLimiter.Wait()
 		code, body, _, err := TBAGet(fmt.Sprintf("/event/%s/teams/simple", tbaKey), s.tbaAPIKey)
@@ -257,7 +200,7 @@ func (s *SyncService) SyncEPAForExistingTeams(year int) error {
 		}
 	}
 
-	log.Printf("Found %d teams from configured events in database, syncing EPA data", len(teamNums))
+	log.Printf("Found %d teams from managed events in database, syncing EPA data", len(teamNums))
 
 	successCount := 0
 	for _, teamNum := range teamNums {
@@ -524,10 +467,12 @@ func (s *SyncService) GetCurrentEvents() ([]string, error) {
 }
 
 func (s *SyncService) GetConfiguredTBAKeys() []string {
-	if s.eventsConfig == nil {
+	eventKeys, err := s.getManagedEventKeys()
+	if err != nil {
+		log.Printf("Failed to get managed event keys: %v", err)
 		return []string{}
 	}
-	return s.eventsConfig.TBAKeys
+	return eventKeys
 }
 
 func (s *SyncService) FullSync() error {
@@ -535,23 +480,22 @@ func (s *SyncService) FullSync() error {
 		log.Printf("Failed to sync teams: %v", err)
 	}
 
-	if s.eventsConfig != nil && s.eventsConfig.SyncSettings.EnableEPASync {
-		log.Printf("Starting EPA sync for existing teams...")
-		if err := s.SyncEPAForExistingTeams(2024); err != nil {
-			log.Printf("Failed to sync EPA data: %v", err)
-		} else {
-			log.Printf("EPA sync completed successfully")
-		}
+	log.Printf("Starting EPA sync for managed-event teams...")
+	if err := s.SyncEPAForExistingTeams(s.currentYear); err != nil {
+		log.Printf("Failed to sync EPA data: %v", err)
+	} else {
+		log.Printf("EPA sync completed successfully")
 	}
 
-	var eventKeys []string
-	if s.eventsConfig != nil {
-		eventKeys = s.eventsConfig.TBAKeys
-		log.Printf("Syncing %d configured events", len(eventKeys))
-	} else {
-		log.Printf("No events configuration loaded, skipping event sync")
+	eventKeys, err := s.getManagedEventKeys()
+	if err != nil {
+		return err
+	}
+	if len(eventKeys) == 0 {
+		log.Printf("No managed events configured, skipping event sync")
 		return nil
 	}
+	log.Printf("Syncing %d managed events", len(eventKeys))
 
 	for _, eventKey := range eventKeys {
 		if err := s.SyncEvent(eventKey); err != nil {
@@ -560,6 +504,6 @@ func (s *SyncService) FullSync() error {
 		time.Sleep(1 * time.Second)
 	}
 
-	log.Printf("Full sync completed for %d configured events", len(eventKeys))
+	log.Printf("Full sync completed for %d managed events", len(eventKeys))
 	return nil
 }
