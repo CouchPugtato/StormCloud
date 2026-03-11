@@ -44,6 +44,7 @@ export default function ProfileScreen() {
   const [exportsLoading, setExportsLoading] = useState(false);
   const [exportingPit, setExportingPit] = useState(false);
   const [exportingMatch, setExportingMatch] = useState(false);
+  const [exportingDummyMatch, setExportingDummyMatch] = useState(false);
 
   const roleOptions = [
     { key: USER_ROLES.VIEWER, label: 'Viewer' },
@@ -927,6 +928,17 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleDummyMatchExport = async () => {
+    try {
+      setExportingDummyMatch(true);
+      await apiService.downloadDummyMatchScoutingCSV();
+    } catch (error) {
+      Alert.alert('Export Error', error.message || 'Unable to download dummy match scouting CSV.');
+    } finally {
+      setExportingDummyMatch(false);
+    }
+  };
+
   const renderExports = () => {
     if (!canExportScoutingData) {
       return null;
@@ -988,6 +1000,17 @@ export default function ProfileScreen() {
           <Ionicons name="download-outline" size={18} color={theme.colors.text} />
           <Text style={[styles.exportButtonSecondaryText, { color: theme.colors.text }]}>
             {exportingMatch ? 'Downloading...' : 'Download Match CSV'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.exportButtonSecondary, { borderColor: theme.colors.border }, exportingDummyMatch && styles.disabledButton]}
+          onPress={handleDummyMatchExport}
+          disabled={exportingDummyMatch}
+        >
+          <Ionicons name="document-text-outline" size={18} color={theme.colors.text} />
+          <Text style={[styles.exportButtonSecondaryText, { color: theme.colors.text }]}>
+            {exportingDummyMatch ? 'Downloading...' : 'Download Dummy Match CSV'}
           </Text>
         </TouchableOpacity>
       </View>

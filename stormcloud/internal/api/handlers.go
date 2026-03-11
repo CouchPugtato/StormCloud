@@ -1961,6 +1961,103 @@ func MatchScoutingExportCSV(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+func MatchScoutingDummyExportCSV(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if !canExportScoutingData(user.Role) {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		records := [][]string{{
+			"event_key", "match_key", "match_number", "team_key", "team_num", "scout_name",
+			"was_auto", "conflicted_own_alliance", "conflicted_opposing_alliance", "used_outpost",
+			"used_depot", "cycles", "percent_contributed", "auto_points_contributed", "got_disabled",
+			"bps_rating", "obvious_penalties", "primary_path", "index_via_intake", "intake_speed",
+			"notes", "shooter_range_close", "shooter_range_mid", "shooter_range_far", "climb",
+			"climb_level", "climb_location", "accuracy_successful", "accuracy_attempted", "created_at", "updated_at",
+		}}
+
+		now := time.Now().Unix()
+		scouters := []string{"Alex Scout", "Jordan Scout", "Taylor Scout", "Morgan Scout", "Casey Scout", "Riley Scout"}
+		ranges := []string{"close", "mid", "far"}
+		paths := []string{"trench", "bump", "both"}
+		climbLevels := []string{"None", "Low", "Mid", "High"}
+
+		for matchNumber := 1; matchNumber <= 50; matchNumber++ {
+			matchKey := fmt.Sprintf("dummy2026_qm%d", matchNumber)
+			baseTeamNum := 1000 + ((matchNumber - 1) * 6)
+
+			for slot := 0; slot < 6; slot++ {
+				teamNum := baseTeamNum + slot + 1
+				teamKey := fmt.Sprintf("frc%d", teamNum)
+				scoutName := scouters[(matchNumber+slot)%len(scouters)]
+				selectedRange := ranges[(matchNumber+slot)%len(ranges)]
+				selectedPath := paths[(matchNumber+slot)%len(paths)]
+				climbLevel := climbLevels[(matchNumber+slot)%len(climbLevels)]
+				createdAt := now - int64((50-matchNumber)*300) - int64(slot*7)
+				updatedAt := createdAt + 60
+				wasAuto := (matchNumber+slot)%2 == 0
+				accuracyAttempted := (matchNumber+slot)%3 != 0
+				accuracySuccessful := accuracyAttempted && (matchNumber+slot)%4 != 0
+
+				records = append(records, []string{
+					"dummy2026",
+					matchKey,
+					strconv.Itoa(matchNumber),
+					teamKey,
+					strconv.Itoa(teamNum),
+					scoutName,
+					strconv.FormatBool(wasAuto),
+					strconv.FormatBool((matchNumber+slot)%11 == 0),
+					strconv.FormatBool((matchNumber+slot)%17 == 0),
+					strconv.FormatBool(slot%2 == 0),
+					strconv.FormatBool(slot%3 == 0),
+					strconv.Itoa(2 + ((matchNumber + slot) % 8)),
+					strconv.Itoa(20 + ((matchNumber * 7) + slot) % 81),
+					"0",
+					strconv.FormatBool((matchNumber+slot)%19 == 0),
+					strconv.Itoa(1 + ((matchNumber + slot) % 5)),
+					func() string {
+						if (matchNumber+slot)%9 == 0 {
+							return "G204 contact"
+						}
+						return ""
+					}(),
+					selectedPath,
+					strconv.FormatBool((matchNumber+slot)%2 == 1),
+					strconv.Itoa(1 + ((matchNumber + slot) % 5)),
+					fmt.Sprintf("Dummy scouting notes for qual %d team %d", matchNumber, teamNum),
+					strconv.FormatBool(selectedRange == "close"),
+					strconv.FormatBool(selectedRange == "mid"),
+					strconv.FormatBool(selectedRange == "far"),
+					strconv.FormatBool(climbLevel != "None"),
+					climbLevel,
+					func() string {
+						if climbLevel == "None" {
+							return ""
+						}
+						if slot < 3 {
+							return "Center"
+						}
+						return "Side"
+					}(),
+					strconv.FormatBool(accuracySuccessful),
+					strconv.FormatBool(accuracyAttempted),
+					strconv.FormatInt(createdAt, 10),
+					strconv.FormatInt(updatedAt, 10),
+				})
+			}
+		}
+
+		writeCSVResponse(w, "match_scouting_dummy_50_quals.csv", records)
+	}
+}
+
 // --- NOTES
 func NotesList(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

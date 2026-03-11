@@ -101,6 +101,7 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Get("/pit-scouting/{team_key}/{event_key}", PitScoutingGet(db))
 		r.Get("/exports/pit-scouting.csv", PitScoutingExportCSV(db))
 		r.Get("/exports/match-scouting/{event_key}.csv", MatchScoutingExportCSV(db))
+		r.Get("/exports/match-scouting-dummy.csv", MatchScoutingDummyExportCSV(db))
 
 		r.Get("/notes", NotesList(db))
 		r.Post("/notes", NotesCreate(db))

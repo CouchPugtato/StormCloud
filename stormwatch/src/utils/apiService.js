@@ -187,6 +187,10 @@ class ApiService {
     return this.downloadCSV(`/exports/match-scouting/${encodeURIComponent(eventKey)}.csv`, `match_scouting_${eventKey}.csv`);
   }
 
+  async downloadDummyMatchScoutingCSV() {
+    return this.downloadCSV('/exports/match-scouting-dummy.csv', 'match_scouting_dummy_50_quals.csv');
+  }
+
   async getAllTeams() {
     try {
       return await this.request('/teams?limit=1000');
