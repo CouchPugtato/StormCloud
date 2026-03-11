@@ -655,6 +655,7 @@ export default function ControlDashboardScreen() {
                   <View style={styles.accountGrid}>
                     {section.accounts.map((account) => {
                       const isDropdownOpen = openAccountDropdownID === account.id;
+                      const isCurrentUser = account.id === user?.id;
                       return (
                         <View
                           key={account.id}
@@ -706,9 +707,16 @@ export default function ControlDashboardScreen() {
                               style={[
                                 styles.accountDropdownButton,
                                 Platform.OS === 'web' && styles.accountDropdownButtonWeb,
+                                isCurrentUser && styles.disabledButton,
                                 { borderColor: theme.colors.border },
                               ]}
-                              onPress={() => setOpenAccountDropdownID(isDropdownOpen ? '' : account.id)}
+                              onPress={() => {
+                                if (isCurrentUser) {
+                                  return;
+                                }
+                                setOpenAccountDropdownID(isDropdownOpen ? '' : account.id);
+                              }}
+                              disabled={isCurrentUser}
                             >
                               <Text
                                 style={[
@@ -725,6 +733,11 @@ export default function ControlDashboardScreen() {
                                 color={theme.colors.textSecondary}
                               />
                             </TouchableOpacity>
+                            {isCurrentUser ? (
+                              <Text style={[styles.accountLockedText, { color: theme.colors.textSecondary }]}>
+                                You can't change your own role
+                              </Text>
+                            ) : null}
                           </View>
                           {isDropdownOpen ? (
                             <View style={[styles.accountDropdownMenu, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
@@ -1536,6 +1549,11 @@ const styles = StyleSheet.create({
   },
   accountDropdownTextWeb: {
     fontSize: 11,
+  },
+  accountLockedText: {
+    fontSize: 11,
+    marginTop: 6,
+    textAlign: 'right',
   },
   accountDropdownMenu: {
     borderWidth: 1,

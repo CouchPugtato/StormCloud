@@ -329,6 +329,10 @@ func LocalUserRoleUpdate(db *sql.DB) http.HandlerFunc {
 			writeJSON(w, 400, map[string]string{"error": "invalid role update payload"})
 			return
 		}
+		if targetUserID == user.ID {
+			writeJSON(w, 403, map[string]string{"error": "you cannot change your own account role"})
+			return
+		}
 
 		res, err := db.Exec(`UPDATE users SET role=?, updated_at=? WHERE id=?`, targetRole, time.Now().Unix(), targetUserID)
 		if err != nil {
