@@ -43,9 +43,15 @@ func main() {
 
 	tbaKey := os.Getenv("TBA_KEY")
 	statboticsKey := os.Getenv("TBA_KEY")
-	currentYear := 2025
+	currentYear := 2026
 	if yearStr := os.Getenv("CURRENT_YEAR"); yearStr != "" {
 		if year, err := strconv.Atoi(yearStr); err == nil {
+			currentYear = year
+		}
+	}
+	var storedSeasonYear string
+	if err := database.QueryRow(`SELECT value FROM app_settings WHERE key=?`, "season_year").Scan(&storedSeasonYear); err == nil {
+		if year, convErr := strconv.Atoi(strings.TrimSpace(storedSeasonYear)); convErr == nil && year > 0 {
 			currentYear = year
 		}
 	}

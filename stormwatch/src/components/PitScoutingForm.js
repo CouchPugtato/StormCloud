@@ -14,201 +14,164 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import apiService from '../utils/apiService';
 
+const SHOOTER_ARCHETYPES = ['turret', 'double turret', 'barrel', 'single fixed', 'double fixed', 'other'];
+const CLIMB_LEVELS = ['None', 'Low', 'Mid', 'High', 'Traversal'];
+
 export default function PitScoutingForm({ route, navigation }) {
   const { theme } = useTheme();
-  const { teamNumber, eventKey } = route.params || {};
+  const { teamNumber, eventKey = '' } = route.params || {};
   const [saving, setSaving] = useState(false);
-
-  if (!teamNumber) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={[styles.header, { backgroundColor: theme.surface }]}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Error</Text>
-        </View>
-        <View style={styles.content}>
-          <Text style={[{ color: theme.text, textAlign: 'center', marginTop: 50 }]}>
-            Team number is required to access pit scouting form.
-          </Text>
-        </View>
-      </View>
-    );
-  }
-  
-  // pit scouting form state
   const [pitData, setPitData] = useState({
-    // scout info
     scoutName: '',
-    
-    // robot specifications
-    robotWeight: '',
-    robotDimensions: '',
-    drivebaseType: '', // swerve, tank, mecanum, etc.
-    
-    // robot capabilities
-    maxCoralLevel: 1, // 1-4 levels
-    canClimb: false,
-    maxClimbLevel: 'None', // None, Low, Mid, High
-    climbTimeEstimate: 0,
-    
-    // vision and autonomous
-    visionSystem: false,
-    autoMobility: false,
-    autoScoringCapability: '',
-    autonomousReliability: 0, // 0-5 scale
-    
-    // strategy and notes
-    preferredStartingPosition: '',
+    estimatedBps: '',
+    shooterArchetype: '',
+    canTrench: false,
+    canBump: false,
+    climbLevel: '',
+    autoClimb: false,
+    climbLocation: '',
+    weight: '',
+    height: '',
+    visionCapabilities: '',
+    dimensions: '',
+    autoPicture: '',
+    batteryCount: '0',
+    autoCount: '0',
+    indexViaIntake: false,
+    intakeAlwaysOut: false,
+    feeding: '',
+    fullField: false,
+    halfField: false,
+    pushFuel: false,
+    drivetrain: '',
+    swerveLevel: '',
     programmingLanguage: '',
-    strengths: '',
-    weaknesses: '',
-    generalNotes: '',
+    yearsUsedProgrammingLanguage: '',
+    indexerType: '',
+    hasSpindexer: false,
+    hasRollers: false,
+    hasBelts: false,
+    indexerOther: '',
+    notes: '',
+    mustPointAtHub: false,
+    motorsBesidesDrivetrain: '0',
+    drivetrainMotors: '0',
   });
 
-  const updateField = (field, value) => {
-    setPitData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
+  const updateField = (field, value) => setPitData((prev) => ({ ...prev, [field]: value }));
 
   const savePitData = async () => {
     try {
-      setSaving(true);
-      
       if (!teamNumber) {
-        Alert.alert('Error', 'Team number is required');
+        Alert.alert('Error', 'Team number is required.');
         return;
       }
-      
-      if (!pitData.scoutName || pitData.scoutName.trim() === '') {
-        Alert.alert('Error', 'Scout name is required');
-        return;
-      }
-      
-      const pitPayload = {
+      setSaving(true);
+      await apiService.submitPitScoutingData({
         team_key: `frc${teamNumber}`,
-        event_key: eventKey || '',
+        event_key: eventKey,
         scout_name: pitData.scoutName.trim(),
-        
-        robot_weight: pitData.robotWeight,
-        robot_dimensions: pitData.robotDimensions,
-        drivebase_type: pitData.drivebaseType,
-        
-        max_coral_level: pitData.maxCoralLevel,
-        can_climb: pitData.canClimb,
-        max_climb_level: pitData.maxClimbLevel,
-        climb_time_estimate: pitData.climbTimeEstimate,
-        
-        auto_mobility: pitData.autoMobility,
-        auto_scoring_capability: pitData.autoScoringCapability,
-        
-        preferred_starting_position: pitData.preferredStartingPosition,
-        strategy_notes: '',
-        strengths: pitData.strengths,
-        weaknesses: pitData.weaknesses,
-        general_notes: pitData.generalNotes,
-        
-        programming_language: pitData.programmingLanguage,
-        vision_system: pitData.visionSystem,
-        autonomous_reliability: pitData.autonomousReliability,
-      };
-      
-      await apiService.submitPitScoutingData(pitPayload);
-      
-      Alert.alert(
-        'Success!',
-        `Pit scouting data for Team ${teamNumber} has been saved to the database.`,
-        [
-          { text: 'Continue Scouting', style: 'default' },
-          { text: 'Back to Team', onPress: () => navigation.goBack() }
-        ]
-      );
+        estimated_bps: pitData.estimatedBps.trim(),
+        shooter_archetype: pitData.shooterArchetype,
+        can_trench: pitData.canTrench,
+        can_bump: pitData.canBump,
+        climb_level: pitData.climbLevel,
+        auto_climb: pitData.autoClimb,
+        climb_location: pitData.climbLocation.trim(),
+        weight: pitData.weight.trim(),
+        height: pitData.height.trim(),
+        vision_capabilities: pitData.visionCapabilities.trim(),
+        dimensions: pitData.dimensions.trim(),
+        auto_picture: pitData.autoPicture.trim(),
+        battery_count: Number(pitData.batteryCount || 0),
+        auto_count: Number(pitData.autoCount || 0),
+        index_via_intake: pitData.indexViaIntake,
+        intake_always_out: pitData.intakeAlwaysOut,
+        feeding: pitData.feeding.trim(),
+        full_field: pitData.fullField,
+        half_field: pitData.halfField,
+        push_fuel: pitData.pushFuel,
+        drivetrain: pitData.drivetrain.trim(),
+        swerve_level: pitData.swerveLevel.trim(),
+        programming_language: pitData.programmingLanguage.trim(),
+        years_used_programming_language: pitData.yearsUsedProgrammingLanguage.trim(),
+        indexer_type: pitData.indexerType.trim(),
+        has_spindexer: pitData.hasSpindexer,
+        has_rollers: pitData.hasRollers,
+        has_belts: pitData.hasBelts,
+        indexer_other: pitData.indexerOther.trim(),
+        notes: pitData.notes.trim(),
+        must_point_at_hub: pitData.mustPointAtHub,
+        motors_besides_drivetrain: Number(pitData.motorsBesidesDrivetrain || 0),
+        drivetrain_motors: Number(pitData.drivetrainMotors || 0),
+      });
+
+      Alert.alert('Saved', `Pit scouting for Team ${teamNumber} was saved.`, [
+        { text: 'Keep Editing', style: 'cancel' },
+        { text: 'Back', onPress: () => navigation.goBack() },
+      ]);
     } catch (error) {
-      console.error('Failed to save pit scouting data:', error);
-      Alert.alert(
-        'Error',
-        'Failed to save pit scouting data. Please check your connection and try again.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Error', error.message || 'Unable to save pit scouting data.');
     } finally {
       setSaving(false);
     }
   };
 
-  const renderRatingSelector = (label, field, maxRating = 5) => {
-    return (
-      <View style={styles.ratingContainer}>
-        <Text style={[styles.ratingLabel, { color: theme.colors.text }]}>{label}</Text>
-        <View style={styles.ratingButtons}>
-          {Array.from({ length: maxRating + 1 }, (_, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.ratingButton,
-                {
-                  backgroundColor: pitData[field] === index 
-                    ? theme.colors.primary 
-                    : 'transparent',
-                  borderColor: theme.colors.primary
-                }
-              ]}
-              onPress={() => updateField(field, index)}
-            >
-              <Text style={[
-                styles.ratingButtonText,
-                {
-                  color: pitData[field] === index 
-                    ? 'white' 
-                    : theme.colors.text
-                }
-              ]}>
-                {index}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-    );
-  };
+  const renderTextInput = (label, field, options = {}) => (
+    <View style={styles.inputContainer} key={field}>
+      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>{label}</Text>
+      <TextInput
+        style={[
+          options.multiline ? styles.notesInput : styles.textInput,
+          { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text },
+        ]}
+        placeholder={options.placeholder || ''}
+        placeholderTextColor={theme.colors.textSecondary}
+        keyboardType={options.keyboardType || 'default'}
+        value={pitData[field]}
+        onChangeText={(value) => updateField(field, options.numeric ? value.replace(/[^0-9.]/g, '') : value)}
+        multiline={Boolean(options.multiline)}
+      />
+    </View>
+  );
 
-  const renderLevelSelector = (label, field, levels) => {
-    return (
-      <View style={styles.ratingContainer}>
-        <Text style={[styles.ratingLabel, { color: theme.colors.text }]}>{label}</Text>
-        <View style={styles.ratingButtons}>
-          {levels.map((level) => (
+  const renderToggle = (label, field) => (
+    <View style={styles.switchRow} key={field}>
+      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>{label}</Text>
+      <Switch
+        value={Boolean(pitData[field])}
+        onValueChange={(value) => updateField(field, value)}
+        trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+        thumbColor="#FFFFFF"
+      />
+    </View>
+  );
+
+  const renderChoiceRow = (label, field, options) => (
+    <View style={styles.inputContainer} key={field}>
+      <Text style={[styles.inputLabel, { color: theme.colors.text }]}>{label}</Text>
+      <View style={styles.chipRow}>
+        {options.map((option) => {
+          const selected = pitData[field] === option;
+          return (
             <TouchableOpacity
-              key={level}
+              key={option}
               style={[
-                styles.levelButton,
+                styles.choiceChip,
                 {
-                  backgroundColor: pitData[field] === level 
-                    ? theme.colors.primary 
-                    : 'transparent',
-                  borderColor: theme.colors.primary
-                }
+                  backgroundColor: selected ? theme.colors.primary : theme.colors.background,
+                  borderColor: selected ? theme.colors.primary : theme.colors.border,
+                },
               ]}
-              onPress={() => updateField(field, level)}
+              onPress={() => updateField(field, option)}
             >
-              <Text style={[
-                styles.ratingButtonText,
-                {
-                  color: pitData[field] === level 
-                    ? 'white' 
-                    : theme.colors.text
-                }
-              ]}>
-                {level}
-              </Text>
+              <Text style={[styles.choiceChipText, { color: selected ? '#fff' : theme.colors.text }]}>{option}</Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          );
+        })}
       </View>
-    );
-  };
+    </View>
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -216,267 +179,75 @@ export default function PitScoutingForm({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Pit Scout Team {teamNumber}
-        </Text>
+        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Pit Scout Team {teamNumber}</Text>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Scout Information */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Scout Information</Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Scout Name</Text>
-            <TextInput
-              style={[styles.textInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="Enter your name"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.scoutName}
-              onChangeText={(value) => updateField('scoutName', value)}
-            />
-          </View>
+          {renderTextInput('Scout Name', 'scoutName', { placeholder: 'Enter your name' })}
+          {renderTextInput('Estimated BPS', 'estimatedBps', { keyboardType: 'numeric', numeric: true, placeholder: '0.0' })}
+          {renderChoiceRow('Shooter Archetype', 'shooterArchetype', SHOOTER_ARCHETYPES)}
         </View>
 
-        {/* Robot Specifications */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Robot Specifications</Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Robot Weight</Text>
-            <TextInput
-              style={[styles.textInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="e.g., 125 lbs"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.robotWeight}
-              onChangeText={(value) => updateField('robotWeight', value)}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Robot Dimensions</Text>
-            <TextInput
-              style={[styles.textInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="e.g., 28x32x42 inches"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.robotDimensions}
-              onChangeText={(value) => updateField('robotDimensions', value)}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Swerve Base Type / Drivetrain</Text>
-            <TextInput
-              style={[styles.textInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="e.g., Swerve, Tank, Mecanum"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.drivebaseType}
-              onChangeText={(value) => updateField('drivebaseType', value)}
-            />
-          </View>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Drive & Field Access</Text>
+          {renderToggle('Yes or no trench', 'canTrench')}
+          {renderToggle('Yes or no bump', 'canBump')}
+          {renderToggle('Index via intake', 'indexViaIntake')}
+          {renderToggle('Intake always out', 'intakeAlwaysOut')}
+          {renderToggle('Full field', 'fullField')}
+          {renderToggle('Half field', 'halfField')}
+          {renderToggle('Push fuel', 'pushFuel')}
+          {renderTextInput('Feeding', 'feeding', { placeholder: 'Feeder station, lane notes, etc.' })}
+          {renderTextInput('Drivetrain', 'drivetrain', { placeholder: 'Tank, swerve, west coast...' })}
+          {renderTextInput('Swerve level', 'swerveLevel', { placeholder: 'Practice, elite, average...' })}
         </View>
 
-        {/* Robot Capabilities */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Robot Capabilities</Text>
-          
-          {renderLevelSelector('Max Coral Level', 'maxCoralLevel', [1, 2, 3, 4])}
-          
-          <View style={styles.switchContainer}>
-            <Text style={[styles.switchLabel, { color: theme.colors.text }]}>Can Climb</Text>
-            <Switch
-              value={pitData.canClimb}
-              onValueChange={(value) => updateField('canClimb', value)}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-            />
-          </View>
-
-          {pitData.canClimb && (
-            <>
-              {renderLevelSelector('Max Climb Level', 'maxClimbLevel', ['None', 'Low', 'Mid', 'High'])}
-              
-              <View style={styles.inputContainer}>
-                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Climb Time Estimate (seconds)</Text>
-                <TextInput
-                  style={[styles.textInput, { 
-                    backgroundColor: theme.colors.background,
-                    color: theme.colors.text,
-                    borderColor: theme.colors.border
-                  }]}
-                  placeholder="e.g., 15"
-                  placeholderTextColor={theme.colors.textSecondary}
-                  value={pitData.climbTimeEstimate.toString()}
-                  onChangeText={(value) => updateField('climbTimeEstimate', parseInt(value) || 0)}
-                  keyboardType="numeric"
-                />
-              </View>
-            </>
-          )}
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Climb & Auto</Text>
+          {renderChoiceRow('Climb level', 'climbLevel', CLIMB_LEVELS)}
+          {renderToggle('Yes or No auto climb', 'autoClimb')}
+          {renderTextInput('Climb location', 'climbLocation', { placeholder: 'Side, center, bar, etc.' })}
+          {renderTextInput('Describe autospicture', 'autoPicture', { multiline: true, placeholder: 'Describe their auto path and shot picture...' })}
+          {renderTextInput('Auto count', 'autoCount', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
         </View>
 
-        {/* Vision and Autonomous */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vision & Autonomous</Text>
-          
-          <View style={styles.switchContainer}>
-            <Text style={[styles.switchLabel, { color: theme.colors.text }]}>Vision Capabilities/Alignment</Text>
-            <Switch
-              value={pitData.visionSystem}
-              onValueChange={(value) => updateField('visionSystem', value)}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-            />
-          </View>
-
-          <View style={styles.switchContainer}>
-            <Text style={[styles.switchLabel, { color: theme.colors.text }]}>Auto Mobility</Text>
-            <Switch
-              value={pitData.autoMobility}
-              onValueChange={(value) => updateField('autoMobility', value)}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Autonomous Description</Text>
-            <TextInput
-              style={[styles.notesInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="Describe autonomous capabilities and strategy..."
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.autoScoringCapability}
-              onChangeText={(value) => updateField('autoScoringCapability', value)}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
-
-          {renderRatingSelector('Autonomous Reliability (0-5)', 'autonomousReliability')}
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Robot Specs</Text>
+          {renderTextInput('Weight', 'weight', { placeholder: 'lbs' })}
+          {renderTextInput('Height', 'height', { placeholder: 'inches' })}
+          {renderTextInput('Dimensions', 'dimensions', { placeholder: 'L x W x H' })}
+          {renderTextInput('Describe vision capabilities', 'visionCapabilities', { multiline: true, placeholder: 'Tracking, target lock, cameras, etc.' })}
+          {renderToggle('Do you/your vision have to be pointed at the hub to score', 'mustPointAtHub')}
+          {renderTextInput('# of batteries', 'batteryCount', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
+          {renderTextInput('# of motors besides drivetrain', 'motorsBesidesDrivetrain', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
+          {renderTextInput('Motors in the drivetrain', 'drivetrainMotors', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
         </View>
 
-        {/* Programming and Strategy */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Programming & Strategy</Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Programming Language</Text>
-            <TextInput
-              style={[styles.textInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="e.g., Java, Python, C++"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.programmingLanguage}
-              onChangeText={(value) => updateField('programmingLanguage', value)}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Preferred Starting Position</Text>
-            <TextInput
-              style={[styles.textInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="e.g., Center, Left, Right"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.preferredStartingPosition}
-              onChangeText={(value) => updateField('preferredStartingPosition', value)}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Team Strengths</Text>
-            <TextInput
-              style={[styles.notesInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="What does this team do well?"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.strengths}
-              onChangeText={(value) => updateField('strengths', value)}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Team Weaknesses</Text>
-            <TextInput
-              style={[styles.notesInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="Areas for improvement or limitations..."
-              placeholderTextColor={theme.colors.textSecondary}
-              value={pitData.weaknesses}
-              onChangeText={(value) => updateField('weaknesses', value)}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Programming & Indexer</Text>
+          {renderTextInput('Programming language', 'programmingLanguage', { placeholder: 'Java, C++, Kotlin...' })}
+          {renderTextInput('Years used programming language', 'yearsUsedProgrammingLanguage', { placeholder: 'How long?' })}
+          {renderTextInput('Type of indexer', 'indexerType', { placeholder: 'Linear, carousel, etc.' })}
+          {renderToggle('Spindexer', 'hasSpindexer')}
+          {renderToggle('Rollers', 'hasRollers')}
+          {renderToggle('Belts', 'hasBelts')}
+          {renderTextInput('Other', 'indexerOther', { placeholder: 'Other indexer details' })}
         </View>
 
-        {/* General Comments */}
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>General Comments</Text>
-          
-          <TextInput
-            style={[styles.notesInput, { 
-              backgroundColor: theme.colors.background,
-              color: theme.colors.text,
-              borderColor: theme.colors.border
-            }]}
-            placeholder="Any additional observations, notes, or comments about this team..."
-            placeholderTextColor={theme.colors.textSecondary}
-            value={pitData.generalNotes}
-            onChangeText={(value) => updateField('generalNotes', value)}
-            multiline
-            numberOfLines={4}
-          />
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Notes</Text>
+          {renderTextInput('Notes', 'notes', { multiline: true, placeholder: 'Anything else worth noting...' })}
         </View>
 
-        {/* Save Button */}
         <TouchableOpacity
-          style={[styles.saveButton, { 
-            backgroundColor: theme.colors.primary,
-            opacity: saving ? 0.6 : 1
-          }]}
+          style={[styles.saveButton, { backgroundColor: theme.colors.primary, opacity: saving ? 0.6 : 1 }]}
           onPress={savePitData}
           disabled={saving}
         >
-          {saving ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <Ionicons name="save-outline" size={20} color="white" />
-          )}
-          <Text style={[styles.saveButtonText, { marginLeft: saving ? 0 : 8 }]}>
-            {saving ? 'Saving...' : 'Save Pit Scouting Data'}
-          </Text>
+          {saving ? <ActivityIndicator size="small" color="white" /> : <Ionicons name="save-outline" size={20} color="white" />}
+          <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save Pit Scouting Data'}</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -484,111 +255,20 @@ export default function PitScoutingForm({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 50,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    gap: 15,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  section: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  inputContainer: {
-    marginBottom: 12,
-  },
-  inputLabel: {
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  textInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  notesInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    textAlignVertical: 'top',
-    minHeight: 80,
-  },
-  switchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  switchLabel: {
-    fontSize: 16,
-  },
-  ratingContainer: {
-    marginBottom: 16,
-  },
-  ratingLabel: {
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  ratingButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  ratingButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  levelButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 60,
-  },
-  ratingButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  saveButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 30,
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20, gap: 15 },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', flex: 1 },
+  content: { flex: 1, paddingHorizontal: 20 },
+  section: { padding: 16, borderRadius: 12, marginBottom: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
+  inputContainer: { marginBottom: 14 },
+  inputLabel: { fontSize: 15, fontWeight: '600', marginBottom: 8, flex: 1 },
+  textInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
+  notesInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 15, minHeight: 96, textAlignVertical: 'top' },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  choiceChip: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, borderWidth: 1 },
+  choiceChipText: { fontSize: 14, fontWeight: '600' },
+  saveButton: { paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginBottom: 30 },
+  saveButtonText: { color: 'white', fontSize: 17, fontWeight: '700' },
 });

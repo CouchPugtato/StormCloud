@@ -98,7 +98,7 @@ export default function TeamDetailScreen({ navigation, route }) {
             comments: detailedTeam.comments || ''
           });
           
-          const eventKey = '2024cmptx';
+          const eventKey = '';
           const pitScoutingData = await apiService.getPitScoutingData(detailedTeam.team_key, eventKey);
           if (pitScoutingData) {
             setPitData(prev => ({
@@ -757,7 +757,7 @@ export default function TeamDetailScreen({ navigation, route }) {
             style={[styles.pitScoutButton, { backgroundColor: theme.colors.primary }]}
             onPress={() => navigation.navigate('PitScoutingForm', { 
               teamNumber: teamData?.team_num,
-              eventKey: '2024cmptx'
+              eventKey: ''
             })}
           >
             <Ionicons name="clipboard-outline" size={20} color="white" />

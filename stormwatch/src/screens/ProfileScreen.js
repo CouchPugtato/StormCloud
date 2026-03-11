@@ -27,7 +27,7 @@ export default function ProfileScreen() {
   const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup'
   const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
   const [leaderboardType, setLeaderboardType] = useState('event');
-  const [selectedEvent, setSelectedEvent] = useState('2024week1');
+  const [selectedEvent, setSelectedEvent] = useState('2026week1');
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
@@ -50,10 +50,10 @@ export default function ProfileScreen() {
   const isAuthModalLarge = authMode === 'signup';
 
   const events = [
-    { key: '2024week1', name: '2024 Week 1' },
-    { key: '2024week2', name: '2024 Week 2' },
-    { key: '2024week3', name: '2024 Week 3' },
-    { key: '2024regional', name: '2024 Regional Championship' },
+    { key: '2026week1', name: '2026 Week 1' },
+    { key: '2026week2', name: '2026 Week 2' },
+    { key: '2026week3', name: '2026 Week 3' },
+    { key: '2026regional', name: '2026 Regional Championship' },
   ];
 
   const leaderboardData = useMemo(() => {
@@ -828,7 +828,7 @@ export default function ProfileScreen() {
     const dummyStats = {
       allTimeMatches: 47,
       seasonMatches: 23,
-      eventMatches: { '2024week1': 8, '2024week2': 12, '2024regional': 3 }
+      eventMatches: { '2026week1': 8, '2026week2': 12, '2026regional': 3 }
     };
     
     const stats = user ? user.stats : dummyStats;

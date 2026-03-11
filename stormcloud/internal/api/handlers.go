@@ -1003,11 +1003,11 @@ func FormJSON(_ *sql.DB) http.HandlerFunc {
 		Options          []string `json:"options,omitempty"`
 	}
 	resp := map[string]any{
-		"version": "2025.1",
+		"version": "2026.1",
 		"fields": []field{
-			{Key: "auto_coral_l4", Label: "Auto Coral L4", Type: "number"},
-			{Key: "climb_level", Label: "Climb Level", Type: "select", Options: []string{"None", "Traversal", "Low", "High"}},
-			{Key: "driver_notes", Label: "Driver Notes", Type: "textarea"},
+			{Key: "estimated_bps", Label: "Estimated BPS", Type: "number"},
+			{Key: "shooter_archetype", Label: "Shooter Archetype", Type: "select", Options: []string{"turret", "double turret", "barrel", "single fixed", "double fixed", "other"}},
+			{Key: "notes", Label: "Notes", Type: "textarea"},
 		},
 	}
 	return func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, resp) }
@@ -1055,6 +1055,12 @@ func AppSettingsGet() http.HandlerFunc {
 func AppSettingsGetWithDB(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		twitchURL := strings.TrimSpace(os.Getenv("TWITCH_CHANNEL_URL"))
+		seasonYear := 2026
+		if yearStr := strings.TrimSpace(os.Getenv("CURRENT_YEAR")); yearStr != "" {
+			if parsed, err := strconv.Atoi(yearStr); err == nil && parsed > 0 {
+				seasonYear = parsed
+			}
+		}
 		if db != nil {
 			var storedURL string
 			err := db.QueryRow(`SELECT value FROM app_settings WHERE key=?`, "twitch_channel_url").Scan(&storedURL)
@@ -1064,18 +1070,31 @@ func AppSettingsGetWithDB(db *sql.DB) http.HandlerFunc {
 				writeJSON(w, 500, map[string]string{"error": err.Error()})
 				return
 			}
+
+			var storedYear string
+			err = db.QueryRow(`SELECT value FROM app_settings WHERE key=?`, "season_year").Scan(&storedYear)
+			if err == nil {
+				if parsed, convErr := strconv.Atoi(strings.TrimSpace(storedYear)); convErr == nil && parsed > 0 {
+					seasonYear = parsed
+				}
+			} else if err != nil && err != sql.ErrNoRows {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
 		}
 
-		settings := map[string]string{
+		settings := map[string]any{
 			"twitch_channel_url": twitchURL,
+			"season_year":        seasonYear,
 		}
 		writeJSON(w, 200, settings)
 	}
 }
 
-func AppSettingsSet(db *sql.DB) http.HandlerFunc {
+func AppSettingsSet(db *sql.DB, syncService *ingest.SyncService) http.HandlerFunc {
 	type in struct {
 		TwitchChannelURL string `json:"twitch_channel_url"`
+		SeasonYear       int    `json:"season_year"`
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -1106,9 +1125,27 @@ func AppSettingsSet(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		seasonYear := payload.SeasonYear
+		if seasonYear <= 0 {
+			seasonYear = 2026
+		}
+		_, err = db.Exec(`
+			INSERT INTO app_settings(key, value, updated_at)
+			VALUES(?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+		`, "season_year", strconv.Itoa(seasonYear), time.Now().Unix())
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if syncService != nil {
+			syncService.SetCurrentYear(seasonYear)
+		}
+
 		writeJSON(w, 200, map[string]any{
 			"ok":                 true,
 			"twitch_channel_url": twitchURL,
+			"season_year":        seasonYear,
 		})
 	}
 }
@@ -1162,32 +1199,29 @@ func MatchScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			TeamKey   string `json:"team_key"`
 			ScoutName string `json:"scout_name"`
 
-			AutoCoralL1        int  `json:"auto_coral_l1"`
-			AutoCoralL2        int  `json:"auto_coral_l2"`
-			AutoCoralL3        int  `json:"auto_coral_l3"`
-			AutoCoralL4        int  `json:"auto_coral_l4"`
-			AutoAlgaeNet       int  `json:"auto_algae_net"`
-			AutoAlgaeProcessor int  `json:"auto_algae_processor"`
-			AutoReef           int  `json:"auto_reef"`
-			AutoMobility       bool `json:"auto_mobility"`
-
-			TeleopCoralL1        int `json:"teleop_coral_l1"`
-			TeleopCoralL2        int `json:"teleop_coral_l2"`
-			TeleopCoralL3        int `json:"teleop_coral_l3"`
-			TeleopCoralL4        int `json:"teleop_coral_l4"`
-			TeleopAlgaeNet       int `json:"teleop_algae_net"`
-			TeleopAlgaeProcessor int `json:"teleop_algae_processor"`
-			TeleopReef           int `json:"teleop_reef"`
-
-			ClimbLevel string `json:"climb_level"`
-			ClimbTime  int    `json:"climb_time"`
-
-			DefenseRating   int `json:"defense_rating"`
-			SpeedRating     int `json:"speed_rating"`
-			StabilityRating int `json:"stability_rating"`
-
-			RobotBroke   bool   `json:"robot_broke"`
-			GeneralNotes string `json:"general_notes"`
+			WasAuto                    bool   `json:"was_auto"`
+			ConflictedOwnAlliance      bool   `json:"conflicted_own_alliance"`
+			ConflictedOpposingAlliance bool   `json:"conflicted_opposing_alliance"`
+			UsedOutpost                bool   `json:"used_outpost"`
+			UsedDepot                  bool   `json:"used_depot"`
+			Cycles                     int    `json:"cycles"`
+			PercentContributed         int    `json:"percent_contributed"`
+			AutoPointsContributed      int    `json:"auto_points_contributed"`
+			GotDisabled                bool   `json:"got_disabled"`
+			BPSRating                  int    `json:"bps_rating"`
+			ObviousPenalties           string `json:"obvious_penalties"`
+			PrimaryPath                string `json:"primary_path"`
+			IndexViaIntake             bool   `json:"index_via_intake"`
+			IntakeSpeed                int    `json:"intake_speed"`
+			Notes                      string `json:"notes"`
+			ShooterRangeClose          bool   `json:"shooter_range_close"`
+			ShooterRangeMid            bool   `json:"shooter_range_mid"`
+			ShooterRangeFar            bool   `json:"shooter_range_far"`
+			Climb                      bool   `json:"climb"`
+			ClimbLevel                 string `json:"climb_level"`
+			ClimbLocation              string `json:"climb_location"`
+			AccuracySuccessful         int    `json:"accuracy_successful"`
+			AccuracyAttempted          int    `json:"accuracy_attempted"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
@@ -1228,22 +1262,18 @@ func MatchScoutingSubmit(db *sql.DB) http.HandlerFunc {
 		_, err = db.Exec(`
 			INSERT OR REPLACE INTO match_scouting_data (
 				match_key, team_key, scout_name,
-				auto_coral_l1, auto_coral_l2, auto_coral_l3, auto_coral_l4,
-				auto_algae_net, auto_algae_processor, auto_reef, auto_mobility,
-				teleop_coral_l1, teleop_coral_l2, teleop_coral_l3, teleop_coral_l4,
-				teleop_algae_net, teleop_algae_processor, teleop_reef,
-				climb_level, climb_time,
-				defense_rating, speed_rating, stability_rating,
-				robot_broke, general_notes
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				was_auto, conflicted_own_alliance, conflicted_opposing_alliance,
+				used_outpost, used_depot, cycles, percent_contributed, auto_points_contributed,
+				got_disabled, bps_rating, obvious_penalties, primary_path, index_via_intake,
+				intake_speed, notes, shooter_range_close, shooter_range_mid, shooter_range_far,
+				climb, climb_level, climb_location, accuracy_successful, accuracy_attempted
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, data.MatchKey, data.TeamKey, data.ScoutName,
-			data.AutoCoralL1, data.AutoCoralL2, data.AutoCoralL3, data.AutoCoralL4,
-			data.AutoAlgaeNet, data.AutoAlgaeProcessor, data.AutoReef, data.AutoMobility,
-			data.TeleopCoralL1, data.TeleopCoralL2, data.TeleopCoralL3, data.TeleopCoralL4,
-			data.TeleopAlgaeNet, data.TeleopAlgaeProcessor, data.TeleopReef,
-			data.ClimbLevel, data.ClimbTime,
-			data.DefenseRating, data.SpeedRating, data.StabilityRating,
-			data.RobotBroke, data.GeneralNotes)
+			data.WasAuto, data.ConflictedOwnAlliance, data.ConflictedOpposingAlliance,
+			data.UsedOutpost, data.UsedDepot, data.Cycles, data.PercentContributed, data.AutoPointsContributed,
+			data.GotDisabled, data.BPSRating, data.ObviousPenalties, data.PrimaryPath, data.IndexViaIntake,
+			data.IntakeSpeed, data.Notes, data.ShooterRangeClose, data.ShooterRangeMid, data.ShooterRangeFar,
+			data.Climb, data.ClimbLevel, data.ClimbLocation, data.AccuracySuccessful, data.AccuracyAttempted)
 
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1288,32 +1318,29 @@ func MatchScoutingGet(db *sql.DB) http.HandlerFunc {
 			TeamKey   string `json:"team_key"`
 			ScoutName string `json:"scout_name"`
 
-			AutoCoralL1        int  `json:"auto_coral_l1"`
-			AutoCoralL2        int  `json:"auto_coral_l2"`
-			AutoCoralL3        int  `json:"auto_coral_l3"`
-			AutoCoralL4        int  `json:"auto_coral_l4"`
-			AutoAlgaeNet       int  `json:"auto_algae_net"`
-			AutoAlgaeProcessor int  `json:"auto_algae_processor"`
-			AutoReef           int  `json:"auto_reef"`
-			AutoMobility       bool `json:"auto_mobility"`
-
-			TeleopCoralL1        int `json:"teleop_coral_l1"`
-			TeleopCoralL2        int `json:"teleop_coral_l2"`
-			TeleopCoralL3        int `json:"teleop_coral_l3"`
-			TeleopCoralL4        int `json:"teleop_coral_l4"`
-			TeleopAlgaeNet       int `json:"teleop_algae_net"`
-			TeleopAlgaeProcessor int `json:"teleop_algae_processor"`
-			TeleopReef           int `json:"teleop_reef"`
-
-			ClimbLevel string `json:"climb_level"`
-			ClimbTime  int    `json:"climb_time"`
-
-			DefenseRating   int `json:"defense_rating"`
-			SpeedRating     int `json:"speed_rating"`
-			StabilityRating int `json:"stability_rating"`
-
-			RobotBroke   bool   `json:"robot_broke"`
-			GeneralNotes string `json:"general_notes"`
+			WasAuto                    bool   `json:"was_auto"`
+			ConflictedOwnAlliance      bool   `json:"conflicted_own_alliance"`
+			ConflictedOpposingAlliance bool   `json:"conflicted_opposing_alliance"`
+			UsedOutpost                bool   `json:"used_outpost"`
+			UsedDepot                  bool   `json:"used_depot"`
+			Cycles                     int    `json:"cycles"`
+			PercentContributed         int    `json:"percent_contributed"`
+			AutoPointsContributed      int    `json:"auto_points_contributed"`
+			GotDisabled                bool   `json:"got_disabled"`
+			BPSRating                  int    `json:"bps_rating"`
+			ObviousPenalties           string `json:"obvious_penalties"`
+			PrimaryPath                string `json:"primary_path"`
+			IndexViaIntake             bool   `json:"index_via_intake"`
+			IntakeSpeed                int    `json:"intake_speed"`
+			Notes                      string `json:"notes"`
+			ShooterRangeClose          bool   `json:"shooter_range_close"`
+			ShooterRangeMid            bool   `json:"shooter_range_mid"`
+			ShooterRangeFar            bool   `json:"shooter_range_far"`
+			Climb                      bool   `json:"climb"`
+			ClimbLevel                 string `json:"climb_level"`
+			ClimbLocation              string `json:"climb_location"`
+			AccuracySuccessful         int    `json:"accuracy_successful"`
+			AccuracyAttempted          int    `json:"accuracy_attempted"`
 
 			CreatedAt int64 `json:"created_at"`
 			UpdatedAt int64 `json:"updated_at"`
@@ -1324,13 +1351,11 @@ func MatchScoutingGet(db *sql.DB) http.HandlerFunc {
 			var s ScoutingData
 			err := rows.Scan(
 				&s.ID, &s.MatchKey, &s.TeamKey, &s.ScoutName,
-				&s.AutoCoralL1, &s.AutoCoralL2, &s.AutoCoralL3, &s.AutoCoralL4,
-				&s.AutoAlgaeNet, &s.AutoAlgaeProcessor, &s.AutoReef, &s.AutoMobility,
-				&s.TeleopCoralL1, &s.TeleopCoralL2, &s.TeleopCoralL3, &s.TeleopCoralL4,
-				&s.TeleopAlgaeNet, &s.TeleopAlgaeProcessor, &s.TeleopReef,
-				&s.ClimbLevel, &s.ClimbTime,
-				&s.DefenseRating, &s.SpeedRating, &s.StabilityRating,
-				&s.RobotBroke, &s.GeneralNotes,
+				&s.WasAuto, &s.ConflictedOwnAlliance, &s.ConflictedOpposingAlliance,
+				&s.UsedOutpost, &s.UsedDepot, &s.Cycles, &s.PercentContributed, &s.AutoPointsContributed,
+				&s.GotDisabled, &s.BPSRating, &s.ObviousPenalties, &s.PrimaryPath, &s.IndexViaIntake,
+				&s.IntakeSpeed, &s.Notes, &s.ShooterRangeClose, &s.ShooterRangeMid, &s.ShooterRangeFar,
+				&s.Climb, &s.ClimbLevel, &s.ClimbLocation, &s.AccuracySuccessful, &s.AccuracyAttempted,
 				&s.CreatedAt, &s.UpdatedAt)
 			if err != nil {
 				writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1349,8 +1374,13 @@ func AllianceScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			MatchKey      string `json:"match_key"`
 			AllianceColor string `json:"alliance_color"`
 			ScoutName     string `json:"scout_name"`
-			GeneralInfo   string `json:"general_info"`
+			DefensePlayed bool     `json:"defense_played"`
+			DefenseQuality string  `json:"defense_quality"`
+			GeneralStrategy []string `json:"general_strategy"`
 			Notes         string `json:"notes"`
+			FeedingDistance string `json:"feeding_distance"`
+			AutoPointsScored int `json:"auto_points_scored"`
+			AutoResult string `json:"auto_result"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
@@ -1361,8 +1391,10 @@ func AllianceScoutingSubmit(db *sql.DB) http.HandlerFunc {
 		data.MatchKey = strings.TrimSpace(data.MatchKey)
 		data.AllianceColor = strings.ToLower(strings.TrimSpace(data.AllianceColor))
 		data.ScoutName = strings.TrimSpace(data.ScoutName)
-		data.GeneralInfo = strings.TrimSpace(data.GeneralInfo)
+		data.DefenseQuality = strings.TrimSpace(data.DefenseQuality)
 		data.Notes = strings.TrimSpace(data.Notes)
+		data.FeedingDistance = strings.TrimSpace(data.FeedingDistance)
+		data.AutoResult = strings.TrimSpace(data.AutoResult)
 
 		if data.MatchKey == "" {
 			writeJSON(w, 400, map[string]string{"error": "match_key is required"})
@@ -1383,11 +1415,19 @@ func AllianceScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		_, err := db.Exec(`
+		strategyJSON, err := json.Marshal(data.GeneralStrategy)
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid general_strategy"})
+			return
+		}
+
+		_, err = db.Exec(`
 			INSERT OR REPLACE INTO alliance_scouting_data (
-				match_key, alliance_color, scout_name, general_info, notes
-			) VALUES (?, ?, ?, ?, ?)
-		`, data.MatchKey, data.AllianceColor, data.ScoutName, data.GeneralInfo, data.Notes)
+				match_key, alliance_color, scout_name, defense_played, defense_quality,
+				general_strategy, notes, feeding_distance, auto_points_scored, auto_result
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, data.MatchKey, data.AllianceColor, data.ScoutName, data.DefensePlayed, data.DefenseQuality,
+			string(strategyJSON), data.Notes, data.FeedingDistance, data.AutoPointsScored, data.AutoResult)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
@@ -1421,32 +1461,29 @@ func TeamMatchScoutingGet(db *sql.DB) http.HandlerFunc {
 			TeamKey   string `json:"team_key"`
 			ScoutName string `json:"scout_name"`
 
-			AutoCoralL1        int  `json:"auto_coral_l1"`
-			AutoCoralL2        int  `json:"auto_coral_l2"`
-			AutoCoralL3        int  `json:"auto_coral_l3"`
-			AutoCoralL4        int  `json:"auto_coral_l4"`
-			AutoAlgaeNet       int  `json:"auto_algae_net"`
-			AutoAlgaeProcessor int  `json:"auto_algae_processor"`
-			AutoReef           int  `json:"auto_reef"`
-			AutoMobility       bool `json:"auto_mobility"`
-
-			TeleopCoralL1        int `json:"teleop_coral_l1"`
-			TeleopCoralL2        int `json:"teleop_coral_l2"`
-			TeleopCoralL3        int `json:"teleop_coral_l3"`
-			TeleopCoralL4        int `json:"teleop_coral_l4"`
-			TeleopAlgaeNet       int `json:"teleop_algae_net"`
-			TeleopAlgaeProcessor int `json:"teleop_algae_processor"`
-			TeleopReef           int `json:"teleop_reef"`
-
-			ClimbLevel string `json:"climb_level"`
-			ClimbTime  int    `json:"climb_time"`
-
-			DefenseRating   int `json:"defense_rating"`
-			SpeedRating     int `json:"speed_rating"`
-			StabilityRating int `json:"stability_rating"`
-
-			RobotBroke   bool   `json:"robot_broke"`
-			GeneralNotes string `json:"general_notes"`
+			WasAuto                    bool   `json:"was_auto"`
+			ConflictedOwnAlliance      bool   `json:"conflicted_own_alliance"`
+			ConflictedOpposingAlliance bool   `json:"conflicted_opposing_alliance"`
+			UsedOutpost                bool   `json:"used_outpost"`
+			UsedDepot                  bool   `json:"used_depot"`
+			Cycles                     int    `json:"cycles"`
+			PercentContributed         int    `json:"percent_contributed"`
+			AutoPointsContributed      int    `json:"auto_points_contributed"`
+			GotDisabled                bool   `json:"got_disabled"`
+			BPSRating                  int    `json:"bps_rating"`
+			ObviousPenalties           string `json:"obvious_penalties"`
+			PrimaryPath                string `json:"primary_path"`
+			IndexViaIntake             bool   `json:"index_via_intake"`
+			IntakeSpeed                int    `json:"intake_speed"`
+			Notes                      string `json:"notes"`
+			ShooterRangeClose          bool   `json:"shooter_range_close"`
+			ShooterRangeMid            bool   `json:"shooter_range_mid"`
+			ShooterRangeFar            bool   `json:"shooter_range_far"`
+			Climb                      bool   `json:"climb"`
+			ClimbLevel                 string `json:"climb_level"`
+			ClimbLocation              string `json:"climb_location"`
+			AccuracySuccessful         int    `json:"accuracy_successful"`
+			AccuracyAttempted          int    `json:"accuracy_attempted"`
 
 			CreatedAt int64 `json:"created_at"`
 			UpdatedAt int64 `json:"updated_at"`
@@ -1457,13 +1494,11 @@ func TeamMatchScoutingGet(db *sql.DB) http.HandlerFunc {
 			var s ScoutingData
 			err := rows.Scan(
 				&s.ID, &s.MatchKey, &s.TeamKey, &s.ScoutName,
-				&s.AutoCoralL1, &s.AutoCoralL2, &s.AutoCoralL3, &s.AutoCoralL4,
-				&s.AutoAlgaeNet, &s.AutoAlgaeProcessor, &s.AutoReef, &s.AutoMobility,
-				&s.TeleopCoralL1, &s.TeleopCoralL2, &s.TeleopCoralL3, &s.TeleopCoralL4,
-				&s.TeleopAlgaeNet, &s.TeleopAlgaeProcessor, &s.TeleopReef,
-				&s.ClimbLevel, &s.ClimbTime,
-				&s.DefenseRating, &s.SpeedRating, &s.StabilityRating,
-				&s.RobotBroke, &s.GeneralNotes,
+				&s.WasAuto, &s.ConflictedOwnAlliance, &s.ConflictedOpposingAlliance,
+				&s.UsedOutpost, &s.UsedDepot, &s.Cycles, &s.PercentContributed, &s.AutoPointsContributed,
+				&s.GotDisabled, &s.BPSRating, &s.ObviousPenalties, &s.PrimaryPath, &s.IndexViaIntake,
+				&s.IntakeSpeed, &s.Notes, &s.ShooterRangeClose, &s.ShooterRangeMid, &s.ShooterRangeFar,
+				&s.Climb, &s.ClimbLevel, &s.ClimbLocation, &s.AccuracySuccessful, &s.AccuracyAttempted,
 				&s.CreatedAt, &s.UpdatedAt)
 			if err != nil {
 				writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1482,28 +1517,39 @@ func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			TeamKey   string `json:"team_key"`
 			EventKey  string `json:"event_key"`
 			ScoutName string `json:"scout_name"`
-
-			RobotWeight     string `json:"robot_weight"`
-			RobotDimensions string `json:"robot_dimensions"`
-			DrivebaseType   string `json:"drivebase_type"`
-
-			MaxCoralLevel     int    `json:"max_coral_level"`
-			CanClimb          bool   `json:"can_climb"`
-			MaxClimbLevel     string `json:"max_climb_level"`
-			ClimbTimeEstimate int    `json:"climb_time_estimate"`
-
-			AutoMobility          bool   `json:"auto_mobility"`
-			AutoScoringCapability string `json:"auto_scoring_capability"`
-
-			PreferredStartingPosition string `json:"preferred_starting_position"`
-			StrategyNotes             string `json:"strategy_notes"`
-			Strengths                 string `json:"strengths"`
-			Weaknesses                string `json:"weaknesses"`
-			GeneralNotes              string `json:"general_notes"`
-
-			ProgrammingLanguage   string `json:"programming_language"`
-			VisionSystem          bool   `json:"vision_system"`
-			AutonomousReliability int    `json:"autonomous_reliability"`
+			EstimatedBPS                 string `json:"estimated_bps"`
+			ShooterArchetype             string `json:"shooter_archetype"`
+			CanTrench                    bool   `json:"can_trench"`
+			CanBump                      bool   `json:"can_bump"`
+			ClimbLevel                   string `json:"climb_level"`
+			AutoClimb                    bool   `json:"auto_climb"`
+			ClimbLocation                string `json:"climb_location"`
+			Weight                       string `json:"weight"`
+			Height                       string `json:"height"`
+			VisionCapabilities           string `json:"vision_capabilities"`
+			Dimensions                   string `json:"dimensions"`
+			AutoPicture                  string `json:"auto_picture"`
+			BatteryCount                 int    `json:"battery_count"`
+			AutoCount                    int    `json:"auto_count"`
+			IndexViaIntake               bool   `json:"index_via_intake"`
+			IntakeAlwaysOut              bool   `json:"intake_always_out"`
+			Feeding                      string `json:"feeding"`
+			FullField                    bool   `json:"full_field"`
+			HalfField                    bool   `json:"half_field"`
+			PushFuel                     bool   `json:"push_fuel"`
+			Drivetrain                   string `json:"drivetrain"`
+			SwerveLevel                  string `json:"swerve_level"`
+			ProgrammingLanguage          string `json:"programming_language"`
+			YearsUsedProgrammingLanguage string `json:"years_used_programming_language"`
+			IndexerType                  string `json:"indexer_type"`
+			HasSpindexer                 bool   `json:"has_spindexer"`
+			HasRollers                   bool   `json:"has_rollers"`
+			HasBelts                     bool   `json:"has_belts"`
+			IndexerOther                 string `json:"indexer_other"`
+			Notes                        string `json:"notes"`
+			MustPointAtHub               bool   `json:"must_point_at_hub"`
+			MotorsBesidesDrivetrain      int    `json:"motors_besides_drivetrain"`
+			DrivetrainMotors             int    `json:"drivetrain_motors"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
@@ -1535,18 +1581,22 @@ func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 		_, err = db.Exec(`
 			INSERT OR REPLACE INTO pit_scouting_data (
 				team_key, event_key, scout_name,
-				robot_weight, robot_dimensions, drivebase_type,
-				max_coral_level, can_climb, max_climb_level, climb_time_estimate,
-				auto_mobility, auto_scoring_capability,
-				preferred_starting_position, strategy_notes, strengths, weaknesses, general_notes,
-				programming_language, vision_system, autonomous_reliability
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				estimated_bps, shooter_archetype, can_trench, can_bump, climb_level, auto_climb,
+				climb_location, weight, height, vision_capabilities, dimensions, auto_picture,
+				battery_count, auto_count, index_via_intake, intake_always_out, feeding, full_field,
+				half_field, push_fuel, drivetrain, swerve_level, programming_language,
+				years_used_programming_language, indexer_type, has_spindexer, has_rollers,
+				has_belts, indexer_other, notes, must_point_at_hub, motors_besides_drivetrain,
+				drivetrain_motors
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, data.TeamKey, data.EventKey, data.ScoutName,
-			data.RobotWeight, data.RobotDimensions, data.DrivebaseType,
-			data.MaxCoralLevel, data.CanClimb, data.MaxClimbLevel, data.ClimbTimeEstimate,
-			data.AutoMobility, data.AutoScoringCapability,
-			data.PreferredStartingPosition, data.StrategyNotes, data.Strengths, data.Weaknesses, data.GeneralNotes,
-			data.ProgrammingLanguage, data.VisionSystem, data.AutonomousReliability)
+			data.EstimatedBPS, data.ShooterArchetype, data.CanTrench, data.CanBump, data.ClimbLevel, data.AutoClimb,
+			data.ClimbLocation, data.Weight, data.Height, data.VisionCapabilities, data.Dimensions, data.AutoPicture,
+			data.BatteryCount, data.AutoCount, data.IndexViaIntake, data.IntakeAlwaysOut, data.Feeding, data.FullField,
+			data.HalfField, data.PushFuel, data.Drivetrain, data.SwerveLevel, data.ProgrammingLanguage,
+			data.YearsUsedProgrammingLanguage, data.IndexerType, data.HasSpindexer, data.HasRollers,
+			data.HasBelts, data.IndexerOther, data.Notes, data.MustPointAtHub, data.MotorsBesidesDrivetrain,
+			data.DrivetrainMotors)
 
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1586,27 +1636,39 @@ func PitScoutingGet(db *sql.DB) http.HandlerFunc {
 			EventKey  string `json:"event_key"`
 			ScoutName string `json:"scout_name"`
 
-			RobotWeight     string `json:"robot_weight"`
-			RobotDimensions string `json:"robot_dimensions"`
-			DrivebaseType   string `json:"drivebase_type"`
-
-			MaxCoralLevel     int    `json:"max_coral_level"`
-			CanClimb          bool   `json:"can_climb"`
-			MaxClimbLevel     string `json:"max_climb_level"`
-			ClimbTimeEstimate int    `json:"climb_time_estimate"`
-
-			AutoMobility          bool   `json:"auto_mobility"`
-			AutoScoringCapability string `json:"auto_scoring_capability"`
-
-			PreferredStartingPosition string `json:"preferred_starting_position"`
-			StrategyNotes             string `json:"strategy_notes"`
-			Strengths                 string `json:"strengths"`
-			Weaknesses                string `json:"weaknesses"`
-			GeneralNotes              string `json:"general_notes"`
-
-			ProgrammingLanguage   string `json:"programming_language"`
-			VisionSystem          bool   `json:"vision_system"`
-			AutonomousReliability int    `json:"autonomous_reliability"`
+			EstimatedBPS                 string `json:"estimated_bps"`
+			ShooterArchetype             string `json:"shooter_archetype"`
+			CanTrench                    bool   `json:"can_trench"`
+			CanBump                      bool   `json:"can_bump"`
+			ClimbLevel                   string `json:"climb_level"`
+			AutoClimb                    bool   `json:"auto_climb"`
+			ClimbLocation                string `json:"climb_location"`
+			Weight                       string `json:"weight"`
+			Height                       string `json:"height"`
+			VisionCapabilities           string `json:"vision_capabilities"`
+			Dimensions                   string `json:"dimensions"`
+			AutoPicture                  string `json:"auto_picture"`
+			BatteryCount                 int    `json:"battery_count"`
+			AutoCount                    int    `json:"auto_count"`
+			IndexViaIntake               bool   `json:"index_via_intake"`
+			IntakeAlwaysOut              bool   `json:"intake_always_out"`
+			Feeding                      string `json:"feeding"`
+			FullField                    bool   `json:"full_field"`
+			HalfField                    bool   `json:"half_field"`
+			PushFuel                     bool   `json:"push_fuel"`
+			Drivetrain                   string `json:"drivetrain"`
+			SwerveLevel                  string `json:"swerve_level"`
+			ProgrammingLanguage          string `json:"programming_language"`
+			YearsUsedProgrammingLanguage string `json:"years_used_programming_language"`
+			IndexerType                  string `json:"indexer_type"`
+			HasSpindexer                 bool   `json:"has_spindexer"`
+			HasRollers                   bool   `json:"has_rollers"`
+			HasBelts                     bool   `json:"has_belts"`
+			IndexerOther                 string `json:"indexer_other"`
+			Notes                        string `json:"notes"`
+			MustPointAtHub               bool   `json:"must_point_at_hub"`
+			MotorsBesidesDrivetrain      int    `json:"motors_besides_drivetrain"`
+			DrivetrainMotors             int    `json:"drivetrain_motors"`
 
 			CreatedAt int64 `json:"created_at"`
 			UpdatedAt int64 `json:"updated_at"`
@@ -1615,11 +1677,13 @@ func PitScoutingGet(db *sql.DB) http.HandlerFunc {
 		var data PitScoutingData
 		err := row.Scan(
 			&data.ID, &data.TeamKey, &data.EventKey, &data.ScoutName,
-			&data.RobotWeight, &data.RobotDimensions, &data.DrivebaseType,
-			&data.MaxCoralLevel, &data.CanClimb, &data.MaxClimbLevel, &data.ClimbTimeEstimate,
-			&data.AutoMobility, &data.AutoScoringCapability,
-			&data.PreferredStartingPosition, &data.StrategyNotes, &data.Strengths, &data.Weaknesses, &data.GeneralNotes,
-			&data.ProgrammingLanguage, &data.VisionSystem, &data.AutonomousReliability,
+			&data.EstimatedBPS, &data.ShooterArchetype, &data.CanTrench, &data.CanBump, &data.ClimbLevel, &data.AutoClimb,
+			&data.ClimbLocation, &data.Weight, &data.Height, &data.VisionCapabilities, &data.Dimensions, &data.AutoPicture,
+			&data.BatteryCount, &data.AutoCount, &data.IndexViaIntake, &data.IntakeAlwaysOut, &data.Feeding, &data.FullField,
+			&data.HalfField, &data.PushFuel, &data.Drivetrain, &data.SwerveLevel, &data.ProgrammingLanguage,
+			&data.YearsUsedProgrammingLanguage, &data.IndexerType, &data.HasSpindexer, &data.HasRollers,
+			&data.HasBelts, &data.IndexerOther, &data.Notes, &data.MustPointAtHub, &data.MotorsBesidesDrivetrain,
+			&data.DrivetrainMotors,
 			&data.CreatedAt, &data.UpdatedAt)
 
 		if err != nil {

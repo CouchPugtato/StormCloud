@@ -52,6 +52,8 @@ export default function ControlDashboardScreen() {
   const [openScheduleDropdownKey, setOpenScheduleDropdownKey] = useState('');
   const [twitchUrl, setTwitchUrl] = useState('');
   const [twitchUrlDraft, setTwitchUrlDraft] = useState('');
+  const [seasonYear, setSeasonYear] = useState('2026');
+  const [seasonYearDraft, setSeasonYearDraft] = useState('2026');
   const [savingTwitchUrl, setSavingTwitchUrl] = useState(false);
   const [showEventsModal, setShowEventsModal] = useState(false);
   const [managedEvents, setManagedEvents] = useState([]);
@@ -184,8 +186,11 @@ export default function ControlDashboardScreen() {
       try {
         const settings = await apiService.getAppSettings();
         const nextUrl = settings.twitch_channel_url || '';
+        const nextSeasonYear = String(settings.season_year || 2026);
         setTwitchUrl(nextUrl);
         setTwitchUrlDraft(nextUrl);
+        setSeasonYear(nextSeasonYear);
+        setSeasonYearDraft(nextSeasonYear);
       } catch (error) {
         console.error('Unable to load app settings:', error);
       }
@@ -896,16 +901,25 @@ export default function ControlDashboardScreen() {
     try {
       const result = await apiService.updateAppSettings({
         twitch_channel_url: twitchUrlDraft.trim(),
+        season_year: Number(seasonYearDraft || seasonYear || 2026),
       });
       const nextUrl = result.twitch_channel_url || '';
+      const nextSeasonYear = String(result.season_year || seasonYearDraft || 2026);
       setTwitchUrl(nextUrl);
       setTwitchUrlDraft(nextUrl);
-      Alert.alert('Success', 'Stream link updated.');
+      setSeasonYear(nextSeasonYear);
+      setSeasonYearDraft(nextSeasonYear);
+      Alert.alert('Success', 'System settings updated.');
     } catch (error) {
-      Alert.alert('Error', error.message || 'Unable to update stream link.');
+      Alert.alert('Error', error.message || 'Unable to update system settings.');
     } finally {
       setSavingTwitchUrl(false);
     }
+  };
+
+  const handleResetSystemSettings = () => {
+    setTwitchUrlDraft(twitchUrl);
+    setSeasonYearDraft(seasonYear);
   };
 
   const loadScheduleForEvent = async (eventKey) => {
@@ -1366,20 +1380,53 @@ export default function ControlDashboardScreen() {
               />
               <View style={styles.streamActions}>
                 <TouchableOpacity
-                  style={[styles.streamButton, { backgroundColor: theme.colors.primary }, (savingTwitchUrl || twitchUrlDraft.trim() === twitchUrl.trim()) && styles.disabledButton]}
+                  style={[
+                    styles.streamButton,
+                    { backgroundColor: theme.colors.primary },
+                    (
+                      savingTwitchUrl ||
+                      (twitchUrlDraft.trim() === twitchUrl.trim() && seasonYearDraft.trim() === seasonYear.trim())
+                    ) && styles.disabledButton,
+                  ]}
                   onPress={handleSaveTwitchURL}
-                  disabled={savingTwitchUrl || twitchUrlDraft.trim() === twitchUrl.trim()}
+                  disabled={
+                    savingTwitchUrl ||
+                    (twitchUrlDraft.trim() === twitchUrl.trim() && seasonYearDraft.trim() === seasonYear.trim())
+                  }
                 >
                   <Text style={styles.streamButtonText}>{savingTwitchUrl ? '...' : 'Save'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.streamButtonSecondary, { borderColor: theme.colors.border }, savingTwitchUrl && styles.disabledButton]}
-                  onPress={() => setTwitchUrlDraft(twitchUrl)}
+                  onPress={handleResetSystemSettings}
                   disabled={savingTwitchUrl}
                 >
                   <Text style={[styles.streamButtonSecondaryText, { color: theme.colors.text }]}>Reset</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+            <View style={styles.streamRow}>
+              <View style={styles.preferenceTextBlock}>
+                <Text style={[styles.preferenceTitle, { color: theme.colors.text }]}>Season Year</Text>
+                <Text style={[styles.preferenceSubtitle, { color: theme.colors.textSecondary }]}>
+                  Controls season-based sync and 2026 form year handling.
+                </Text>
+              </View>
+              <TextInput
+                style={[
+                  styles.streamInput,
+                  {
+                    backgroundColor: theme.colors.background,
+                    borderColor: theme.colors.border,
+                    color: theme.colors.text,
+                  },
+                ]}
+                value={seasonYearDraft}
+                onChangeText={(text) => setSeasonYearDraft(text.replace(/[^0-9]/g, '').slice(0, 4))}
+                placeholder="2026"
+                placeholderTextColor={theme.colors.textSecondary}
+                keyboardType="numeric"
+              />
             </View>
           </View>
 
