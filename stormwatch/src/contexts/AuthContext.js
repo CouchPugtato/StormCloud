@@ -19,10 +19,9 @@ const AUTH_TOKEN_STORAGE_KEY = 'stormwatch_auth_token';
 const AUTH_USER_STORAGE_KEY = 'stormwatch_auth_user';
 
 const defaultStats = {
-  totalMatches: 0,
-  eventMatches: {},
   seasonMatches: 0,
   allTimeMatches: 0,
+  eventMatches: {},
 };
 
 const normalizeUser = (rawUser) => {
@@ -52,9 +51,11 @@ const mapBackendUser = (backendUser, existingProfile = null) => {
     id: backendUser.id,
     email: backendUser.email || null,
     name: fullName || backendUser.email || 'User',
+    firstName,
+    lastName,
     role: backendUser.role || DEFAULT_USER_ROLE,
     createdAt: existingProfile?.createdAt || (backendUser.created_at ? new Date(backendUser.created_at * 1000).toISOString() : new Date().toISOString()),
-    stats: existingProfile?.stats || defaultStats,
+    stats: backendUser.stats || existingProfile?.stats || defaultStats,
   });
 };
 
@@ -204,6 +205,13 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const refreshCurrentUser = useCallback(async () => {
+    const me = await apiService.authMe();
+    const backendUser = me.user || me;
+    await upsertProfile(backendUser);
+    return backendUser;
+  }, [upsertProfile]);
+
   const completeSecondFactor = async () => {
     throw new Error('MFA is not configured for local auth.');
   };
@@ -214,6 +222,36 @@ export const AuthProvider = ({ children }) => {
 
   const completePasswordReset = async () => {
     throw new Error('Password reset is not yet implemented for local auth.');
+  };
+
+  const updateProfile = async (firstName, lastName) => {
+    if (!user) {
+      throw new Error('You must be signed in.');
+    }
+    if (!firstName.trim() || !lastName.trim()) {
+      throw new Error('First name and last name are required.');
+    }
+
+    const result = await apiService.authUpdateProfile({
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+    });
+    const backendUser = result.user || result;
+    await upsertProfile(backendUser);
+    return backendUser;
+  };
+
+  const changePassword = async (currentPassword, newPassword) => {
+    if (!user) {
+      throw new Error('You must be signed in.');
+    }
+    if (!currentPassword.trim() || !newPassword.trim()) {
+      throw new Error('Current password and new password are required.');
+    }
+    await apiService.authChangePassword({
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
   };
 
   const updateUserRole = async (targetUserID, targetRole) => {
@@ -244,74 +282,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const getLeaderboard = (type = 'allTime', eventKey = null) => {
-    let sortedUsers = [...users];
-
-    switch (type) {
-      case 'event':
-        if (!eventKey) {
-          return [];
-        }
-        sortedUsers = sortedUsers
-          .map((profile) => ({
-            ...profile,
-            matchCount: profile.stats.eventMatches[eventKey] || 0,
-          }))
-          .filter((profile) => profile.matchCount > 0)
-          .sort((a, b) => b.matchCount - a.matchCount);
-        break;
-      case 'season':
-        sortedUsers = sortedUsers
-          .map((profile) => ({
-            ...profile,
-            matchCount: profile.stats.seasonMatches || 0,
-          }))
-          .filter((profile) => profile.matchCount > 0)
-          .sort((a, b) => b.matchCount - a.matchCount);
-        break;
-      case 'allTime':
-      default:
-        sortedUsers = sortedUsers
-          .map((profile) => ({
-            ...profile,
-            matchCount: profile.stats.allTimeMatches || 0,
-          }))
-          .filter((profile) => profile.matchCount > 0)
-          .sort((a, b) => b.matchCount - a.matchCount);
-        break;
-    }
-
-    return sortedUsers.map((profile, index) => ({
-      ...profile,
-      rank: index + 1,
-    }));
-  };
-
-  const updateUserStats = async (matchData) => {
-    if (!user) {
-      return;
-    }
-
-    const updatedUser = {
-      ...user,
-      stats: {
-        ...user.stats,
-        totalMatches: user.stats.totalMatches + 1,
-        seasonMatches: user.stats.seasonMatches + 1,
-        allTimeMatches: user.stats.allTimeMatches + 1,
-        eventMatches: {
-          ...user.stats.eventMatches,
-          [matchData.eventKey]: (user.stats.eventMatches[matchData.eventKey] || 0) + 1,
-        },
-      },
-    };
-
-    const updatedUsers = users.map((profile) => (profile.id === user.id ? updatedUser : profile));
-    await saveUsers(updatedUsers);
-    setUser(updatedUser);
-    await AsyncStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(updatedUser));
-  };
-
   const value = {
     user,
     users,
@@ -322,9 +292,10 @@ export const AuthProvider = ({ children }) => {
     completeSecondFactor,
     startPasswordReset,
     completePasswordReset,
+    refreshCurrentUser,
+    updateProfile,
+    changePassword,
     updateUserRole,
-    updateUserStats,
-    getLeaderboard,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

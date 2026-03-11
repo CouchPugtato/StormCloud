@@ -343,10 +343,35 @@ class ApiService {
     return this.request('/auth/me');
   }
 
+  async authUpdateProfile(payload) {
+    return this.request('/auth/profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async authChangePassword(payload) {
+    return this.request('/auth/password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async authLogout() {
     return this.request('/auth/logout', {
       method: 'POST',
     });
+  }
+
+  async getLeaderboard(type = 'alltime', eventKey = '') {
+    const params = new URLSearchParams();
+    if (type) {
+      params.set('type', type);
+    }
+    if (eventKey) {
+      params.set('event_key', eventKey);
+    }
+    return this.request(`/leaderboard?${params.toString()}`);
   }
 
   async getAppSettings() {

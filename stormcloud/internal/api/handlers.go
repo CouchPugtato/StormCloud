@@ -1294,16 +1294,22 @@ func MatchScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		_, err = db.Exec(`DELETE FROM match_scouting_data WHERE match_key=? AND team_key=? AND scout_user_id=?`, data.MatchKey, data.TeamKey, user.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
 		_, err = db.Exec(`
 			INSERT OR REPLACE INTO match_scouting_data (
-				match_key, team_key, scout_name,
+				match_key, team_key, scout_name, scout_user_id,
 				was_auto, conflicted_own_alliance, conflicted_opposing_alliance,
 				used_outpost, used_depot, cycles, percent_contributed, auto_points_contributed,
 				got_disabled, bps_rating, obvious_penalties, primary_path, index_via_intake,
 				intake_speed, notes, shooter_range_close, shooter_range_mid, shooter_range_far,
 				climb, climb_level, climb_location, accuracy_successful, accuracy_attempted
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, data.MatchKey, data.TeamKey, scoutingReportName(user),
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, data.MatchKey, data.TeamKey, scoutingReportName(user), user.ID,
 			data.WasAuto, data.ConflictedOwnAlliance, data.ConflictedOpposingAlliance,
 			data.UsedOutpost, data.UsedDepot, data.Cycles, data.PercentContributed, data.AutoPointsContributed,
 			data.GotDisabled, data.BPSRating, data.ObviousPenalties, data.PrimaryPath, data.IndexViaIntake,
@@ -1311,6 +1317,11 @@ func MatchScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			data.Climb, data.ClimbLevel, data.ClimbLocation, data.AccuracySuccessful, data.AccuracyAttempted)
 
 		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		if _, err := recomputeUserMatchStats(db, user.ID); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
@@ -1333,10 +1344,10 @@ func MatchScoutingGet(db *sql.DB) http.HandlerFunc {
 		var args []interface{}
 
 		if teamKey != "" {
-			query = `SELECT * FROM match_scouting_data WHERE match_key=? AND team_key=?`
+			query = `SELECT id, match_key, team_key, scout_name, scout_user_id, was_auto, conflicted_own_alliance, conflicted_opposing_alliance, used_outpost, used_depot, cycles, percent_contributed, auto_points_contributed, got_disabled, bps_rating, obvious_penalties, primary_path, index_via_intake, intake_speed, notes, shooter_range_close, shooter_range_mid, shooter_range_far, climb, climb_level, climb_location, accuracy_successful, accuracy_attempted, created_at, updated_at FROM match_scouting_data WHERE match_key=? AND team_key=?`
 			args = []interface{}{matchKey, teamKey}
 		} else {
-			query = `SELECT * FROM match_scouting_data WHERE match_key=?`
+			query = `SELECT id, match_key, team_key, scout_name, scout_user_id, was_auto, conflicted_own_alliance, conflicted_opposing_alliance, used_outpost, used_depot, cycles, percent_contributed, auto_points_contributed, got_disabled, bps_rating, obvious_penalties, primary_path, index_via_intake, intake_speed, notes, shooter_range_close, shooter_range_mid, shooter_range_far, climb, climb_level, climb_location, accuracy_successful, accuracy_attempted, created_at, updated_at FROM match_scouting_data WHERE match_key=?`
 			args = []interface{}{matchKey}
 		}
 
@@ -1384,8 +1395,9 @@ func MatchScoutingGet(db *sql.DB) http.HandlerFunc {
 		var results []ScoutingData
 		for rows.Next() {
 			var s ScoutingData
+			var scoutUserID sql.NullString
 			err := rows.Scan(
-				&s.ID, &s.MatchKey, &s.TeamKey, &s.ScoutName,
+				&s.ID, &s.MatchKey, &s.TeamKey, &s.ScoutName, &scoutUserID,
 				&s.WasAuto, &s.ConflictedOwnAlliance, &s.ConflictedOpposingAlliance,
 				&s.UsedOutpost, &s.UsedDepot, &s.Cycles, &s.PercentContributed, &s.AutoPointsContributed,
 				&s.GotDisabled, &s.BPSRating, &s.ObviousPenalties, &s.PrimaryPath, &s.IndexViaIntake,
@@ -1460,12 +1472,18 @@ func AllianceScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		_, err = db.Exec(`DELETE FROM alliance_scouting_data WHERE match_key=? AND alliance_color=? AND scout_user_id=?`, data.MatchKey, data.AllianceColor, user.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
 		_, err = db.Exec(`
 			INSERT OR REPLACE INTO alliance_scouting_data (
-				match_key, alliance_color, scout_name, defense_played, defense_quality,
+				match_key, alliance_color, scout_name, scout_user_id, defense_played, defense_quality,
 				general_strategy, notes, feeding_distance, auto_points_scored, auto_result
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, data.MatchKey, data.AllianceColor, scoutingReportName(user), data.DefensePlayed, data.DefenseQuality,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, data.MatchKey, data.AllianceColor, scoutingReportName(user), user.ID, data.DefensePlayed, data.DefenseQuality,
 			string(strategyJSON), data.Notes, data.FeedingDistance, data.AutoPointsScored, data.AutoResult)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1486,7 +1504,7 @@ func TeamMatchScoutingGet(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Get all match scouting data for the team, ordered by most recent first
-		query := `SELECT * FROM match_scouting_data WHERE team_key=? ORDER BY created_at DESC`
+		query := `SELECT id, match_key, team_key, scout_name, scout_user_id, was_auto, conflicted_own_alliance, conflicted_opposing_alliance, used_outpost, used_depot, cycles, percent_contributed, auto_points_contributed, got_disabled, bps_rating, obvious_penalties, primary_path, index_via_intake, intake_speed, notes, shooter_range_close, shooter_range_mid, shooter_range_far, climb, climb_level, climb_location, accuracy_successful, accuracy_attempted, created_at, updated_at FROM match_scouting_data WHERE team_key=? ORDER BY created_at DESC`
 		rows, err := db.Query(query, teamKey)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1531,8 +1549,9 @@ func TeamMatchScoutingGet(db *sql.DB) http.HandlerFunc {
 		var results []ScoutingData
 		for rows.Next() {
 			var s ScoutingData
+			var scoutUserID sql.NullString
 			err := rows.Scan(
-				&s.ID, &s.MatchKey, &s.TeamKey, &s.ScoutName,
+				&s.ID, &s.MatchKey, &s.TeamKey, &s.ScoutName, &scoutUserID,
 				&s.WasAuto, &s.ConflictedOwnAlliance, &s.ConflictedOpposingAlliance,
 				&s.UsedOutpost, &s.UsedDepot, &s.Cycles, &s.PercentContributed, &s.AutoPointsContributed,
 				&s.GotDisabled, &s.BPSRating, &s.ObviousPenalties, &s.PrimaryPath, &s.IndexViaIntake,
@@ -1622,9 +1641,15 @@ func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		_, err = db.Exec(`DELETE FROM pit_scouting_data WHERE team_key=? AND event_key=? AND scout_user_id=?`, data.TeamKey, data.EventKey, user.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
 		_, err = db.Exec(`
 			INSERT OR REPLACE INTO pit_scouting_data (
-				team_key, event_key, scout_name,
+				team_key, event_key, scout_name, scout_user_id,
 				estimated_bps, shooter_archetype, can_trench, can_bump, climb_level, auto_climb,
 				climb_location, weight, height, vision_capabilities, dimensions, auto_picture,
 				battery_count, auto_count, index_via_intake, intake_always_out, feeding, full_field,
@@ -1632,8 +1657,8 @@ func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 				years_used_programming_language, indexer_type, has_spindexer, has_rollers,
 				has_belts, indexer_other, notes, must_point_at_hub, motors_besides_drivetrain,
 				drivetrain_motors
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, data.TeamKey, data.EventKey, scoutingReportName(user),
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, data.TeamKey, data.EventKey, scoutingReportName(user), user.ID,
 			data.EstimatedBPS, data.ShooterArchetype, data.CanTrench, data.CanBump, data.ClimbLevel, data.AutoClimb,
 			data.ClimbLocation, data.Weight, data.Height, data.VisionCapabilities, data.Dimensions, data.AutoPicture,
 			data.BatteryCount, data.AutoCount, data.IndexViaIntake, data.IntakeAlwaysOut, data.Feeding, data.FullField,
@@ -1665,10 +1690,10 @@ func PitScoutingGet(db *sql.DB) http.HandlerFunc {
 		var args []interface{}
 
 		if eventKey != "" {
-			query = `SELECT * FROM pit_scouting_data WHERE team_key=? AND event_key=? ORDER BY created_at DESC LIMIT 1`
+			query = `SELECT id, team_key, event_key, scout_name, scout_user_id, estimated_bps, shooter_archetype, can_trench, can_bump, climb_level, auto_climb, climb_location, weight, height, vision_capabilities, dimensions, auto_picture, battery_count, auto_count, index_via_intake, intake_always_out, feeding, full_field, half_field, push_fuel, drivetrain, swerve_level, programming_language, years_used_programming_language, indexer_type, has_spindexer, has_rollers, has_belts, indexer_other, notes, must_point_at_hub, motors_besides_drivetrain, drivetrain_motors, created_at, updated_at FROM pit_scouting_data WHERE team_key=? AND event_key=? ORDER BY created_at DESC LIMIT 1`
 			args = []interface{}{teamKey, eventKey}
 		} else {
-			query = `SELECT * FROM pit_scouting_data WHERE team_key=? ORDER BY created_at DESC LIMIT 1`
+			query = `SELECT id, team_key, event_key, scout_name, scout_user_id, estimated_bps, shooter_archetype, can_trench, can_bump, climb_level, auto_climb, climb_location, weight, height, vision_capabilities, dimensions, auto_picture, battery_count, auto_count, index_via_intake, intake_always_out, feeding, full_field, half_field, push_fuel, drivetrain, swerve_level, programming_language, years_used_programming_language, indexer_type, has_spindexer, has_rollers, has_belts, indexer_other, notes, must_point_at_hub, motors_besides_drivetrain, drivetrain_motors, created_at, updated_at FROM pit_scouting_data WHERE team_key=? ORDER BY created_at DESC LIMIT 1`
 			args = []interface{}{teamKey}
 		}
 
@@ -1719,8 +1744,9 @@ func PitScoutingGet(db *sql.DB) http.HandlerFunc {
 		}
 
 		var data PitScoutingData
+		var scoutUserID sql.NullString
 		err := row.Scan(
-			&data.ID, &data.TeamKey, &data.EventKey, &data.ScoutName,
+			&data.ID, &data.TeamKey, &data.EventKey, &data.ScoutName, &scoutUserID,
 			&data.EstimatedBPS, &data.ShooterArchetype, &data.CanTrench, &data.CanBump, &data.ClimbLevel, &data.AutoClimb,
 			&data.ClimbLocation, &data.Weight, &data.Height, &data.VisionCapabilities, &data.Dimensions, &data.AutoPicture,
 			&data.BatteryCount, &data.AutoCount, &data.IndexViaIntake, &data.IntakeAlwaysOut, &data.Feeding, &data.FullField,

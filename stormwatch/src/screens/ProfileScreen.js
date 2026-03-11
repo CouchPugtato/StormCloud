@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,14 +20,14 @@ import { platformUtils } from '../utils/platformUtils';
 import { registerForPushNotifications, unregisterNativePush, unregisterWebPush } from '../utils/pushNotifications';
 import apiService from '../utils/apiService';
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { theme, isDarkMode, themePreference, toggleTheme, setSystemTheme } = useTheme();
-  const { user, signIn, signOut, createAccount, getLeaderboard } = useAuth();
+  const { user, signIn, signOut, createAccount, updateProfile, changePassword, refreshCurrentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('leaderboard');
   const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup'
   const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
   const [leaderboardType, setLeaderboardType] = useState('event');
-  const [selectedEvent, setSelectedEvent] = useState('2026week1');
+  const [selectedEvent, setSelectedEvent] = useState('');
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
@@ -39,12 +39,19 @@ export default function ProfileScreen() {
   const [scheduledMatches, setScheduledMatches] = useState([]);
   const [scheduledMatchesLoading, setScheduledMatchesLoading] = useState(false);
   const [scheduledTeamDetails, setScheduledTeamDetails] = useState({});
+  const [leaderboardEntries, setLeaderboardEntries] = useState([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [events, setEvents] = useState([]);
   const [exportEvents, setExportEvents] = useState([]);
   const [selectedExportEvent, setSelectedExportEvent] = useState('');
   const [exportsLoading, setExportsLoading] = useState(false);
   const [exportingPit, setExportingPit] = useState(false);
   const [exportingMatch, setExportingMatch] = useState(false);
   const [exportingDummyMatch, setExportingDummyMatch] = useState(false);
+  const [profileForm, setProfileForm] = useState({ firstName: '', lastName: '' });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [passwordSaving, setPasswordSaving] = useState(false);
 
   const roleOptions = [
     { key: USER_ROLES.VIEWER, label: 'Viewer' },
@@ -56,16 +63,10 @@ export default function ProfileScreen() {
   const canExportScoutingData = currentRole === USER_ROLES.DRIVE_TEAM || currentRole === USER_ROLES.SCOUTING_LEAD;
   const isAuthModalLarge = authMode === 'signup';
 
-  const events = [
-    { key: '2026week1', name: '2026 Week 1' },
-    { key: '2026week2', name: '2026 Week 2' },
-    { key: '2026week3', name: '2026 Week 3' },
-    { key: '2026regional', name: '2026 Regional Championship' },
-  ];
-
-  const leaderboardData = useMemo(() => {
-    return getLeaderboard(leaderboardType, selectedEvent);
-  }, [getLeaderboard, leaderboardType, selectedEvent]);
+  const leaderboardData = leaderboardEntries.map((entry, index) => ({
+    ...entry,
+    rank: index + 1,
+  }));
 
   const loadScheduledMatches = async () => {
     if (!user) {
@@ -125,39 +126,83 @@ export default function ProfileScreen() {
     loadScheduledMatches();
   }, [user?.id]);
 
+  useEffect(() => {
+    setProfileForm({
+      firstName: user?.firstName || '',
+      lastName: user?.lastName || '',
+    });
+  }, [user?.firstName, user?.lastName]);
+
   useFocusEffect(
     React.useCallback(() => {
       loadScheduledMatches();
-    }, [user?.id])
+      if (user) {
+        refreshCurrentUser().catch((error) => {
+          console.error('Unable to refresh profile:', error);
+        });
+      }
+    }, [user?.id, refreshCurrentUser])
   );
 
   useEffect(() => {
-    const loadExportEvents = async () => {
-      if (!user || !canExportScoutingData) {
-        setExportEvents([]);
-        setSelectedExportEvent('');
-        return;
-      }
-
+    const loadEvents = async () => {
       setExportsLoading(true);
       try {
         const eventsFromServer = await apiService.getEvents();
-        setExportEvents(eventsFromServer || []);
-        if ((eventsFromServer || []).length > 0) {
-          setSelectedExportEvent((prev) => {
-            const hasPrev = (eventsFromServer || []).some((event) => event.event_key === prev);
-            return hasPrev ? prev : eventsFromServer[0].event_key;
+        const normalizedEvents = eventsFromServer || [];
+        setEvents(normalizedEvents);
+        setExportEvents(canExportScoutingData ? normalizedEvents : []);
+
+        if (normalizedEvents.length > 0) {
+          setSelectedEvent((prev) => {
+            const hasPrev = normalizedEvents.some((event) => event.event_key === prev);
+            return hasPrev ? prev : normalizedEvents[0].event_key;
           });
+          if (canExportScoutingData) {
+            setSelectedExportEvent((prev) => {
+              const hasPrev = normalizedEvents.some((event) => event.event_key === prev);
+              return hasPrev ? prev : normalizedEvents[0].event_key;
+            });
+          }
+        } else {
+          setSelectedEvent('');
+          setSelectedExportEvent('');
         }
       } catch (error) {
-        console.error('Unable to load export events:', error);
+        console.error('Unable to load events:', error);
       } finally {
         setExportsLoading(false);
       }
     };
 
-    loadExportEvents();
-  }, [user?.id, canExportScoutingData]);
+    loadEvents();
+  }, [canExportScoutingData]);
+
+  useEffect(() => {
+    const loadLeaderboard = async () => {
+      if (leaderboardType === 'event' && !selectedEvent) {
+        setLeaderboardEntries([]);
+        return;
+      }
+      setLeaderboardLoading(true);
+      try {
+        const typeMap = {
+          allTime: 'alltime',
+          season: 'season',
+          event: 'event',
+        };
+        const entries = await apiService.getLeaderboard(typeMap[leaderboardType] || 'alltime', leaderboardType === 'event' ? selectedEvent : '');
+        setLeaderboardEntries(entries || []);
+      } catch (error) {
+        console.error('Unable to load leaderboard:', error);
+        setLeaderboardEntries([]);
+      } finally {
+        setLeaderboardLoading(false);
+      }
+    };
+
+    loadLeaderboard();
+  }, [leaderboardType, selectedEvent]);
 
   const showInfo = (title, message) => {
     if (Platform.OS === 'web') {
@@ -258,6 +303,41 @@ export default function ProfileScreen() {
 
   const handleSignOut = () => {
     setShowSignOutModal(true);
+  };
+
+  const handleProfileSave = async () => {
+    try {
+      setProfileSaving(true);
+      await updateProfile(profileForm.firstName, profileForm.lastName);
+      await refreshCurrentUser();
+      Alert.alert('Saved', 'Account name updated.');
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to update account name.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handlePasswordSave = async () => {
+    if (!passwordForm.currentPassword.trim() || !passwordForm.newPassword.trim()) {
+      Alert.alert('Error', 'Current password and new password are required.');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      Alert.alert('Error', 'New passwords do not match.');
+      return;
+    }
+
+    try {
+      setPasswordSaving(true);
+      await changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      Alert.alert('Saved', 'Password updated.');
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to update password.');
+    } finally {
+      setPasswordSaving(false);
+    }
   };
 
   const renderAuthForm = () => (
@@ -534,6 +614,101 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      <View style={[styles.roleSection, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.roleSectionTitle, { color: theme.colors.text }]}>Account Details</Text>
+        <View style={styles.inputContainer}>
+          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>First Name</Text>
+          <TextInput
+            style={[styles.input, {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.border,
+              color: theme.colors.text,
+            }]}
+            value={profileForm.firstName}
+            onChangeText={(text) => setProfileForm((prev) => ({ ...prev, firstName: text }))}
+            placeholder="First name"
+            placeholderTextColor={theme.colors.textSecondary}
+          />
+        </View>
+        <View style={styles.inputContainer}>
+          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Last Name</Text>
+          <TextInput
+            style={[styles.input, {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.border,
+              color: theme.colors.text,
+            }]}
+            value={profileForm.lastName}
+            onChangeText={(text) => setProfileForm((prev) => ({ ...prev, lastName: text }))}
+            placeholder="Last name"
+            placeholderTextColor={theme.colors.textSecondary}
+          />
+        </View>
+        <TouchableOpacity
+          style={[styles.authButton, { backgroundColor: theme.colors.primary, opacity: profileSaving ? 0.6 : 1 }]}
+          onPress={handleProfileSave}
+          disabled={profileSaving}
+        >
+          <Text style={styles.authButtonText}>{profileSaving ? 'Saving...' : 'Save Name'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={[styles.roleSection, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.roleSectionTitle, { color: theme.colors.text }]}>Password</Text>
+        <View style={styles.inputContainer}>
+          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Current Password</Text>
+          <TextInput
+            style={[styles.input, {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.border,
+              color: theme.colors.text,
+            }]}
+            value={passwordForm.currentPassword}
+            onChangeText={(text) => setPasswordForm((prev) => ({ ...prev, currentPassword: text }))}
+            placeholder="Current password"
+            placeholderTextColor={theme.colors.textSecondary}
+            secureTextEntry
+          />
+        </View>
+        <View style={styles.inputContainer}>
+          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>New Password</Text>
+          <TextInput
+            style={[styles.input, {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.border,
+              color: theme.colors.text,
+            }]}
+            value={passwordForm.newPassword}
+            onChangeText={(text) => setPasswordForm((prev) => ({ ...prev, newPassword: text }))}
+            placeholder="New password"
+            placeholderTextColor={theme.colors.textSecondary}
+            secureTextEntry
+          />
+        </View>
+        <View style={styles.inputContainer}>
+          <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Confirm New Password</Text>
+          <TextInput
+            style={[styles.input, {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.border,
+              color: theme.colors.text,
+            }]}
+            value={passwordForm.confirmPassword}
+            onChangeText={(text) => setPasswordForm((prev) => ({ ...prev, confirmPassword: text }))}
+            placeholder="Confirm new password"
+            placeholderTextColor={theme.colors.textSecondary}
+            secureTextEntry
+          />
+        </View>
+        <TouchableOpacity
+          style={[styles.authButton, { backgroundColor: theme.colors.primary, opacity: passwordSaving ? 0.6 : 1 }]}
+          onPress={handlePasswordSave}
+          disabled={passwordSaving}
+        >
+          <Text style={styles.authButtonText}>{passwordSaving ? 'Saving...' : 'Update Password'}</Text>
+        </TouchableOpacity>
+      </View>
+
       {renderExports()}
 
       <View style={styles.statsContainer}>
@@ -624,14 +799,14 @@ export default function ProfileScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.eventSelector}>
               {events.map((event) => (
                 <TouchableOpacity
-                  key={event.key}
+                  key={event.event_key}
                   style={[styles.eventButton,
-                    selectedEvent === event.key && { backgroundColor: theme.colors.primary }
+                    selectedEvent === event.event_key && { backgroundColor: theme.colors.primary }
                   ]}
-                  onPress={() => setSelectedEvent(event.key)}
+                  onPress={() => setSelectedEvent(event.event_key)}
                 >
                   <Text style={[styles.eventButtonText,
-                    selectedEvent === event.key && { color: 'white' },
+                    selectedEvent === event.event_key && { color: 'white' },
                     { color: theme.colors.text }
                   ]}>{event.name}</Text>
                 </TouchableOpacity>
@@ -641,7 +816,13 @@ export default function ProfileScreen() {
           </View>
 
         <View>
-          {leaderboardData.length === 0 ? (
+          {leaderboardLoading ? (
+            <View style={styles.emptyLeaderboard}>
+              <Text style={[styles.emptyLeaderboardText, { color: theme.colors.textSecondary }]}>
+                Loading leaderboard...
+              </Text>
+            </View>
+          ) : leaderboardData.length === 0 ? (
             <View style={styles.emptyLeaderboard}>
               <Ionicons name="trophy-outline" size={48} color={theme.colors.textSecondary} />
               <Text style={[styles.emptyLeaderboardText, { color: theme.colors.textSecondary }]}>
@@ -862,14 +1043,8 @@ export default function ProfileScreen() {
   };
 
   const renderMyStatistics = () => {
-    const dummyStats = {
-      allTimeMatches: 47,
-      seasonMatches: 23,
-      eventMatches: { '2026week1': 8, '2026week2': 12, '2026regional': 3 }
-    };
-    
-    const stats = user ? user.stats : dummyStats;
-    const title = user ? 'My Statistics' : 'Sample Statistics';
+    const stats = user ? user.stats : { allTimeMatches: 0, seasonMatches: 0, eventMatches: {} };
+    const title = user ? 'My Statistics' : 'Statistics';
     
     return (
       <View style={styles.myStatsContainer}>
