@@ -57,6 +57,43 @@ class ApiService {
     return this.request(`/teams/${teamKey}`);
   }
 
+  async downloadCSV(endpoint, filename) {
+    const url = `${this.baseURL}${endpoint}`;
+    const response = await fetch(url, {
+      headers: {
+        ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorPayload = await response.json();
+        if (errorPayload?.error) {
+          errorMessage = errorPayload.error;
+        }
+      } catch (_) {
+        // no-op
+      }
+      throw new Error(errorMessage);
+    }
+
+    if (typeof document === 'undefined') {
+      throw new Error('CSV download is currently supported on web only.');
+    }
+
+    const blob = await response.blob();
+    const objectURL = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectURL;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(objectURL);
+    return true;
+  }
+
   async updateTeamPhoto(teamKey, robotPhoto) {
     return this.request(`/teams/${teamKey}/photo`, {
       method: 'PUT',
@@ -140,6 +177,14 @@ class ApiService {
       }
       throw error; 
     }
+  }
+
+  async downloadPitScoutingCSV() {
+    return this.downloadCSV('/exports/pit-scouting.csv', 'pit_scouting_export.csv');
+  }
+
+  async downloadMatchScoutingCSV(eventKey) {
+    return this.downloadCSV(`/exports/match-scouting/${encodeURIComponent(eventKey)}.csv`, `match_scouting_${eventKey}.csv`);
   }
 
   async getAllTeams() {

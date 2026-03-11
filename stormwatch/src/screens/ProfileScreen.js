@@ -39,6 +39,11 @@ export default function ProfileScreen() {
   const [scheduledMatches, setScheduledMatches] = useState([]);
   const [scheduledMatchesLoading, setScheduledMatchesLoading] = useState(false);
   const [scheduledTeamDetails, setScheduledTeamDetails] = useState({});
+  const [exportEvents, setExportEvents] = useState([]);
+  const [selectedExportEvent, setSelectedExportEvent] = useState('');
+  const [exportsLoading, setExportsLoading] = useState(false);
+  const [exportingPit, setExportingPit] = useState(false);
+  const [exportingMatch, setExportingMatch] = useState(false);
 
   const roleOptions = [
     { key: USER_ROLES.VIEWER, label: 'Viewer' },
@@ -47,6 +52,7 @@ export default function ProfileScreen() {
     { key: USER_ROLES.SCOUTING_LEAD, label: 'Scouting Lead' },
   ];
   const currentRole = user?.role || USER_ROLES.VIEWER;
+  const canExportScoutingData = currentRole === USER_ROLES.DRIVE_TEAM || currentRole === USER_ROLES.SCOUTING_LEAD;
   const isAuthModalLarge = authMode === 'signup';
 
   const events = [
@@ -123,6 +129,34 @@ export default function ProfileScreen() {
       loadScheduledMatches();
     }, [user?.id])
   );
+
+  useEffect(() => {
+    const loadExportEvents = async () => {
+      if (!user || !canExportScoutingData) {
+        setExportEvents([]);
+        setSelectedExportEvent('');
+        return;
+      }
+
+      setExportsLoading(true);
+      try {
+        const eventsFromServer = await apiService.getEvents();
+        setExportEvents(eventsFromServer || []);
+        if ((eventsFromServer || []).length > 0) {
+          setSelectedExportEvent((prev) => {
+            const hasPrev = (eventsFromServer || []).some((event) => event.event_key === prev);
+            return hasPrev ? prev : eventsFromServer[0].event_key;
+          });
+        }
+      } catch (error) {
+        console.error('Unable to load export events:', error);
+      } finally {
+        setExportsLoading(false);
+      }
+    };
+
+    loadExportEvents();
+  }, [user?.id, canExportScoutingData]);
 
   const showInfo = (title, message) => {
     if (Platform.OS === 'web') {
@@ -499,6 +533,8 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {renderExports()}
+
       <View style={styles.statsContainer}>
         <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
           <Ionicons name="trophy" size={24} color="#FFD700" />
@@ -864,6 +900,100 @@ export default function ProfileScreen() {
     );
   };
 
+  const handlePitExport = async () => {
+    try {
+      setExportingPit(true);
+      await apiService.downloadPitScoutingCSV();
+    } catch (error) {
+      Alert.alert('Export Error', error.message || 'Unable to download pit scouting CSV.');
+    } finally {
+      setExportingPit(false);
+    }
+  };
+
+  const handleMatchExport = async () => {
+    if (!selectedExportEvent) {
+      Alert.alert('Export Error', 'Select an event first.');
+      return;
+    }
+
+    try {
+      setExportingMatch(true);
+      await apiService.downloadMatchScoutingCSV(selectedExportEvent);
+    } catch (error) {
+      Alert.alert('Export Error', error.message || 'Unable to download match scouting CSV.');
+    } finally {
+      setExportingMatch(false);
+    }
+  };
+
+  const renderExports = () => {
+    if (!canExportScoutingData) {
+      return null;
+    }
+
+    return (
+      <View style={[styles.roleSection, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.roleSectionTitle, { color: theme.colors.text }]}>Data Exports</Text>
+        <Text style={[styles.roleNote, { color: theme.colors.textSecondary }]}>
+          Download pit scouting for all teams or match scouting for a selected event.
+        </Text>
+
+        <TouchableOpacity
+          style={[styles.exportButton, { backgroundColor: theme.colors.primary }, exportingPit && styles.disabledButton]}
+          onPress={handlePitExport}
+          disabled={exportingPit}
+        >
+          <Ionicons name="download-outline" size={18} color="white" />
+          <Text style={styles.exportButtonText}>{exportingPit ? 'Downloading...' : 'Download Pit CSV'}</Text>
+        </TouchableOpacity>
+
+        <Text style={[styles.exportLabel, { color: theme.colors.text }]}>Match scouting event</Text>
+        {exportsLoading ? (
+          <Text style={[styles.roleNote, { color: theme.colors.textSecondary }]}>Loading events...</Text>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exportEventRow}>
+            {exportEvents.map((event) => {
+              const selected = selectedExportEvent === event.event_key;
+              return (
+                <TouchableOpacity
+                  key={event.event_key}
+                  style={[
+                    styles.exportEventChip,
+                    {
+                      backgroundColor: selected ? theme.colors.primary : theme.colors.background,
+                      borderColor: selected ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}
+                  onPress={() => setSelectedExportEvent(event.event_key)}
+                >
+                  <Text style={[styles.exportEventChipText, { color: selected ? 'white' : theme.colors.text }]}>
+                    {event.name || event.event_key}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        <TouchableOpacity
+          style={[
+            styles.exportButtonSecondary,
+            { borderColor: theme.colors.border },
+            (!selectedExportEvent || exportingMatch) && styles.disabledButton,
+          ]}
+          onPress={handleMatchExport}
+          disabled={!selectedExportEvent || exportingMatch}
+        >
+          <Ionicons name="download-outline" size={18} color={theme.colors.text} />
+          <Text style={[styles.exportButtonSecondaryText, { color: theme.colors.text }]}>
+            {exportingMatch ? 'Downloading...' : 'Download Match CSV'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   if (!user) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -1186,6 +1316,54 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 12,
     textAlign: 'center',
+  },
+  exportButton: {
+    marginTop: 12,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  exportButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  exportLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  exportEventRow: {
+    paddingBottom: 4,
+    gap: 8,
+  },
+  exportEventChip: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  exportEventChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  exportButtonSecondary: {
+    marginTop: 14,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    borderWidth: 1,
+  },
+  exportButtonSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   preferenceRow: {
     flexDirection: 'row',

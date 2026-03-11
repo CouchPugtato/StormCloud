@@ -14,15 +14,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import apiService from '../utils/apiService';
 
-const PATH_OPTIONS = ['Trench', 'Bump', 'Other'];
-const CLIMB_LEVELS = ['None', 'Low', 'Mid', 'High', 'Traversal'];
+const PATH_OPTIONS = ['Trench', 'Bump', 'Both'];
+const CLIMB_LEVELS = ['None', 'Low', 'Mid', 'High'];
+const SHOOTER_RANGE_OPTIONS = ['Close', 'Mid', 'Far'];
 
 export default function MatchScoutingForm({ route, navigation }) {
   const { theme } = useTheme();
   const { teamNumber, matchData } = route.params;
   const [saving, setSaving] = useState(false);
   const [scoutingData, setScoutingData] = useState({
-    scoutName: '',
     wasAuto: false,
     conflictedOwnAlliance: false,
     conflictedOpposingAlliance: false,
@@ -30,7 +30,6 @@ export default function MatchScoutingForm({ route, navigation }) {
     usedDepot: false,
     cycles: '0',
     percentContributed: '0',
-    autoPointsContributed: '0',
     gotDisabled: false,
     bpsRating: 0,
     obviousPenalties: '',
@@ -38,14 +37,11 @@ export default function MatchScoutingForm({ route, navigation }) {
     indexViaIntake: false,
     intakeSpeed: 0,
     notes: '',
-    shooterRangeClose: false,
-    shooterRangeMid: false,
-    shooterRangeFar: false,
-    climb: false,
+    shooterRange: '',
     climbLevel: '',
     climbLocation: '',
-    accuracySuccessful: '0',
-    accuracyAttempted: '0',
+    accuracyAttempted: false,
+    accuracySuccessful: false,
   });
 
   const matchKey = useMemo(
@@ -63,7 +59,6 @@ export default function MatchScoutingForm({ route, navigation }) {
       await apiService.submitMatchScoutingData({
         match_key: matchKey,
         team_key: `frc${teamNumber}`,
-        scout_name: scoutingData.scoutName.trim(),
         was_auto: scoutingData.wasAuto,
         conflicted_own_alliance: scoutingData.conflictedOwnAlliance,
         conflicted_opposing_alliance: scoutingData.conflictedOpposingAlliance,
@@ -71,7 +66,7 @@ export default function MatchScoutingForm({ route, navigation }) {
         used_depot: scoutingData.usedDepot,
         cycles: Number(scoutingData.cycles || 0),
         percent_contributed: Number(scoutingData.percentContributed || 0),
-        auto_points_contributed: Number(scoutingData.autoPointsContributed || 0),
+        auto_points_contributed: 0,
         got_disabled: scoutingData.gotDisabled,
         bps_rating: scoutingData.bpsRating,
         obvious_penalties: scoutingData.obviousPenalties.trim(),
@@ -79,14 +74,14 @@ export default function MatchScoutingForm({ route, navigation }) {
         index_via_intake: scoutingData.indexViaIntake,
         intake_speed: scoutingData.intakeSpeed,
         notes: scoutingData.notes.trim(),
-        shooter_range_close: scoutingData.shooterRangeClose,
-        shooter_range_mid: scoutingData.shooterRangeMid,
-        shooter_range_far: scoutingData.shooterRangeFar,
-        climb: scoutingData.climb,
+        shooter_range_close: scoutingData.shooterRange === 'Close',
+        shooter_range_mid: scoutingData.shooterRange === 'Mid',
+        shooter_range_far: scoutingData.shooterRange === 'Far',
+        climb: scoutingData.climbLevel && scoutingData.climbLevel !== 'None',
         climb_level: scoutingData.climbLevel,
         climb_location: scoutingData.climbLocation.trim(),
-        accuracy_successful: Number(scoutingData.accuracySuccessful || 0),
-        accuracy_attempted: Number(scoutingData.accuracyAttempted || 0),
+        accuracy_successful: scoutingData.accuracySuccessful,
+        accuracy_attempted: scoutingData.accuracyAttempted,
       });
 
       Alert.alert('Saved', `Scouting data for Team ${teamNumber} was saved.`, [
@@ -219,11 +214,6 @@ export default function MatchScoutingForm({ route, navigation }) {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Scout Information</Text>
-          {renderTextInput('Scout Name', 'scoutName', { placeholder: 'Enter your name' })}
-        </View>
-
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Auto</Text>
           {renderToggle('Was there an auto?', 'wasAuto')}
           {renderToggle('Conflicted with own alliance?', 'conflictedOwnAlliance')}
@@ -232,7 +222,6 @@ export default function MatchScoutingForm({ route, navigation }) {
           {renderToggle('Used depot', 'usedDepot')}
           {renderNumberInput('# cycles?', 'cycles')}
           {renderNumberInput('Percent contributed', 'percentContributed')}
-          {renderNumberInput('Multiply by alliance scouter points scored in auto', 'autoPointsContributed')}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
@@ -242,20 +231,17 @@ export default function MatchScoutingForm({ route, navigation }) {
           {renderChoiceRow('Primarily trench or bump?', 'primaryPath', PATH_OPTIONS)}
           {renderToggle('Index via intake?', 'indexViaIntake')}
           {renderRatingRow('Intake speed', 'intakeSpeed')}
+          {renderChoiceRow('Shooter range', 'shooterRange', SHOOTER_RANGE_OPTIONS)}
           {renderTextInput('Obvious Penalties', 'obviousPenalties', { multiline: true, placeholder: 'Penalties, fouls, repeated issues...' })}
           {renderTextInput('Notes', 'notes', { multiline: true, placeholder: 'Anything else to remember...' })}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Shooter & Climb</Text>
-          {renderToggle('Close range', 'shooterRangeClose')}
-          {renderToggle('Mid range', 'shooterRangeMid')}
-          {renderToggle('Far range', 'shooterRangeFar')}
-          {renderToggle('Climb?', 'climb')}
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Climb</Text>
           {renderChoiceRow('Level', 'climbLevel', CLIMB_LEVELS)}
           {renderTextInput('Location', 'climbLocation', { placeholder: 'Center, side, buddy, etc.' })}
-          {renderNumberInput('Accuracy successful', 'accuracySuccessful')}
-          {renderNumberInput('Accuracy attempted', 'accuracyAttempted')}
+          {renderToggle('Attempted', 'accuracyAttempted')}
+          {renderToggle('Successful', 'accuracySuccessful')}
         </View>
 
         <TouchableOpacity

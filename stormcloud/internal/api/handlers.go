@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,30 @@ import (
 	"github.com/CouchPugtato/StormCloud/internal/jobs"
 	"github.com/go-chi/chi/v5"
 )
+
+func canExportScoutingData(role string) bool {
+	return role == "drive_team" || role == "scouting_lead"
+}
+
+func writeCSVResponse(w http.ResponseWriter, filename string, records [][]string) {
+	var buffer bytes.Buffer
+	writer := csv.NewWriter(&buffer)
+	_ = writer.WriteAll(records)
+	writer.Flush()
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buffer.Bytes())
+}
+
+func scoutingReportName(user *authUser) string {
+	name := strings.TrimSpace(strings.Join([]string{strings.TrimSpace(user.FirstName), strings.TrimSpace(user.LastName)}, " "))
+	if name != "" {
+		return name
+	}
+	return strings.TrimSpace(user.Email)
+}
 
 // --- helpers
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -1194,10 +1220,15 @@ func EventModeSet(scheduler *jobs.Scheduler) http.HandlerFunc {
 // --- MATCH SCOUTING DATA
 func MatchScoutingSubmit(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+
 		var data struct {
 			MatchKey  string `json:"match_key"`
 			TeamKey   string `json:"team_key"`
-			ScoutName string `json:"scout_name"`
 
 			WasAuto                    bool   `json:"was_auto"`
 			ConflictedOwnAlliance      bool   `json:"conflicted_own_alliance"`
@@ -1220,8 +1251,8 @@ func MatchScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			Climb                      bool   `json:"climb"`
 			ClimbLevel                 string `json:"climb_level"`
 			ClimbLocation              string `json:"climb_location"`
-			AccuracySuccessful         int    `json:"accuracy_successful"`
-			AccuracyAttempted          int    `json:"accuracy_attempted"`
+			AccuracySuccessful         bool   `json:"accuracy_successful"`
+			AccuracyAttempted          bool   `json:"accuracy_attempted"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
@@ -1268,7 +1299,7 @@ func MatchScoutingSubmit(db *sql.DB) http.HandlerFunc {
 				intake_speed, notes, shooter_range_close, shooter_range_mid, shooter_range_far,
 				climb, climb_level, climb_location, accuracy_successful, accuracy_attempted
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, data.MatchKey, data.TeamKey, data.ScoutName,
+		`, data.MatchKey, data.TeamKey, scoutingReportName(user),
 			data.WasAuto, data.ConflictedOwnAlliance, data.ConflictedOpposingAlliance,
 			data.UsedOutpost, data.UsedDepot, data.Cycles, data.PercentContributed, data.AutoPointsContributed,
 			data.GotDisabled, data.BPSRating, data.ObviousPenalties, data.PrimaryPath, data.IndexViaIntake,
@@ -1339,8 +1370,8 @@ func MatchScoutingGet(db *sql.DB) http.HandlerFunc {
 			Climb                      bool   `json:"climb"`
 			ClimbLevel                 string `json:"climb_level"`
 			ClimbLocation              string `json:"climb_location"`
-			AccuracySuccessful         int    `json:"accuracy_successful"`
-			AccuracyAttempted          int    `json:"accuracy_attempted"`
+			AccuracySuccessful         bool   `json:"accuracy_successful"`
+			AccuracyAttempted          bool   `json:"accuracy_attempted"`
 
 			CreatedAt int64 `json:"created_at"`
 			UpdatedAt int64 `json:"updated_at"`
@@ -1370,10 +1401,15 @@ func MatchScoutingGet(db *sql.DB) http.HandlerFunc {
 
 func AllianceScoutingSubmit(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+
 		var data struct {
 			MatchKey      string `json:"match_key"`
 			AllianceColor string `json:"alliance_color"`
-			ScoutName     string `json:"scout_name"`
 			DefensePlayed bool     `json:"defense_played"`
 			DefenseQuality string  `json:"defense_quality"`
 			GeneralStrategy []string `json:"general_strategy"`
@@ -1390,7 +1426,6 @@ func AllianceScoutingSubmit(db *sql.DB) http.HandlerFunc {
 
 		data.MatchKey = strings.TrimSpace(data.MatchKey)
 		data.AllianceColor = strings.ToLower(strings.TrimSpace(data.AllianceColor))
-		data.ScoutName = strings.TrimSpace(data.ScoutName)
 		data.DefenseQuality = strings.TrimSpace(data.DefenseQuality)
 		data.Notes = strings.TrimSpace(data.Notes)
 		data.FeedingDistance = strings.TrimSpace(data.FeedingDistance)
@@ -1426,7 +1461,7 @@ func AllianceScoutingSubmit(db *sql.DB) http.HandlerFunc {
 				match_key, alliance_color, scout_name, defense_played, defense_quality,
 				general_strategy, notes, feeding_distance, auto_points_scored, auto_result
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, data.MatchKey, data.AllianceColor, data.ScoutName, data.DefensePlayed, data.DefenseQuality,
+		`, data.MatchKey, data.AllianceColor, scoutingReportName(user), data.DefensePlayed, data.DefenseQuality,
 			string(strategyJSON), data.Notes, data.FeedingDistance, data.AutoPointsScored, data.AutoResult)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1482,8 +1517,8 @@ func TeamMatchScoutingGet(db *sql.DB) http.HandlerFunc {
 			Climb                      bool   `json:"climb"`
 			ClimbLevel                 string `json:"climb_level"`
 			ClimbLocation              string `json:"climb_location"`
-			AccuracySuccessful         int    `json:"accuracy_successful"`
-			AccuracyAttempted          int    `json:"accuracy_attempted"`
+			AccuracySuccessful         bool   `json:"accuracy_successful"`
+			AccuracyAttempted          bool   `json:"accuracy_attempted"`
 
 			CreatedAt int64 `json:"created_at"`
 			UpdatedAt int64 `json:"updated_at"`
@@ -1513,10 +1548,15 @@ func TeamMatchScoutingGet(db *sql.DB) http.HandlerFunc {
 
 func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+
 		var data struct {
 			TeamKey   string `json:"team_key"`
 			EventKey  string `json:"event_key"`
-			ScoutName string `json:"scout_name"`
 			EstimatedBPS                 string `json:"estimated_bps"`
 			ShooterArchetype             string `json:"shooter_archetype"`
 			CanTrench                    bool   `json:"can_trench"`
@@ -1589,7 +1629,7 @@ func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 				has_belts, indexer_other, notes, must_point_at_hub, motors_besides_drivetrain,
 				drivetrain_motors
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, data.TeamKey, data.EventKey, data.ScoutName,
+		`, data.TeamKey, data.EventKey, scoutingReportName(user),
 			data.EstimatedBPS, data.ShooterArchetype, data.CanTrench, data.CanBump, data.ClimbLevel, data.AutoClimb,
 			data.ClimbLocation, data.Weight, data.Height, data.VisionCapabilities, data.Dimensions, data.AutoPicture,
 			data.BatteryCount, data.AutoCount, data.IndexViaIntake, data.IntakeAlwaysOut, data.Feeding, data.FullField,
@@ -1696,6 +1736,228 @@ func PitScoutingGet(db *sql.DB) http.HandlerFunc {
 		}
 
 		writeJSON(w, 200, data)
+	}
+}
+
+func PitScoutingExportCSV(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if !canExportScoutingData(user.Role) {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT
+				p.team_key,
+				COALESCE(t.team_num, 0),
+				COALESCE(p.event_key, ''),
+				COALESCE(p.scout_name, ''),
+				COALESCE(p.estimated_bps, ''),
+				COALESCE(p.shooter_archetype, ''),
+				p.can_trench,
+				p.can_bump,
+				COALESCE(p.climb_level, ''),
+				p.auto_climb,
+				COALESCE(p.climb_location, ''),
+				COALESCE(p.weight, ''),
+				COALESCE(p.height, ''),
+				COALESCE(p.vision_capabilities, ''),
+				COALESCE(p.dimensions, ''),
+				COALESCE(p.auto_picture, ''),
+				COALESCE(p.battery_count, 0),
+				COALESCE(p.auto_count, 0),
+				p.index_via_intake,
+				p.intake_always_out,
+				COALESCE(p.feeding, ''),
+				p.full_field,
+				p.half_field,
+				p.push_fuel,
+				COALESCE(p.drivetrain, ''),
+				COALESCE(p.swerve_level, ''),
+				COALESCE(p.programming_language, ''),
+				COALESCE(p.years_used_programming_language, ''),
+				COALESCE(p.indexer_type, ''),
+				p.has_spindexer,
+				p.has_rollers,
+				p.has_belts,
+				COALESCE(p.indexer_other, ''),
+				COALESCE(p.notes, ''),
+				p.must_point_at_hub,
+				COALESCE(p.motors_besides_drivetrain, 0),
+				COALESCE(p.drivetrain_motors, 0),
+				p.created_at,
+				p.updated_at
+			FROM pit_scouting_data p
+			LEFT JOIN teams t ON t.team_key = p.team_key
+			ORDER BY t.team_num ASC, p.created_at DESC
+		`)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer rows.Close()
+
+		records := [][]string{{
+			"team_key", "team_num", "event_key", "scout_name", "estimated_bps", "shooter_archetype",
+			"can_trench", "can_bump", "climb_level", "auto_climb", "climb_location", "weight", "height",
+			"vision_capabilities", "dimensions", "auto_picture", "battery_count", "auto_count",
+			"index_via_intake", "intake_always_out", "feeding", "full_field", "half_field", "push_fuel",
+			"drivetrain", "swerve_level", "programming_language", "years_used_programming_language",
+			"indexer_type", "has_spindexer", "has_rollers", "has_belts", "indexer_other", "notes",
+			"must_point_at_hub", "motors_besides_drivetrain", "drivetrain_motors", "created_at", "updated_at",
+		}}
+
+		for rows.Next() {
+			var teamKey, eventKey, scoutName, estimatedBPS, shooterArchetype, climbLevel, climbLocation string
+			var weight, height, visionCapabilities, dimensions, autoPicture, feeding, drivetrain string
+			var swerveLevel, programmingLanguage, yearsUsedProgrammingLanguage, indexerType, indexerOther, notes string
+			var teamNum, batteryCount, autoCount, motorsBesidesDrivetrain, drivetrainMotors int
+			var canTrench, canBump, autoClimb, indexViaIntake, intakeAlwaysOut, fullField, halfField, pushFuel bool
+			var hasSpindexer, hasRollers, hasBelts, mustPointAtHub bool
+			var createdAt, updatedAt int64
+
+			if err := rows.Scan(
+				&teamKey, &teamNum, &eventKey, &scoutName, &estimatedBPS, &shooterArchetype,
+				&canTrench, &canBump, &climbLevel, &autoClimb, &climbLocation, &weight, &height,
+				&visionCapabilities, &dimensions, &autoPicture, &batteryCount, &autoCount,
+				&indexViaIntake, &intakeAlwaysOut, &feeding, &fullField, &halfField, &pushFuel,
+				&drivetrain, &swerveLevel, &programmingLanguage, &yearsUsedProgrammingLanguage,
+				&indexerType, &hasSpindexer, &hasRollers, &hasBelts, &indexerOther, &notes,
+				&mustPointAtHub, &motorsBesidesDrivetrain, &drivetrainMotors, &createdAt, &updatedAt,
+			); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+
+			records = append(records, []string{
+				teamKey, strconv.Itoa(teamNum), eventKey, scoutName, estimatedBPS, shooterArchetype,
+				strconv.FormatBool(canTrench), strconv.FormatBool(canBump), climbLevel, strconv.FormatBool(autoClimb),
+				climbLocation, weight, height, visionCapabilities, dimensions, autoPicture,
+				strconv.Itoa(batteryCount), strconv.Itoa(autoCount), strconv.FormatBool(indexViaIntake),
+				strconv.FormatBool(intakeAlwaysOut), feeding, strconv.FormatBool(fullField),
+				strconv.FormatBool(halfField), strconv.FormatBool(pushFuel), drivetrain, swerveLevel,
+				programmingLanguage, yearsUsedProgrammingLanguage, indexerType, strconv.FormatBool(hasSpindexer),
+				strconv.FormatBool(hasRollers), strconv.FormatBool(hasBelts), indexerOther, notes,
+				strconv.FormatBool(mustPointAtHub), strconv.Itoa(motorsBesidesDrivetrain),
+				strconv.Itoa(drivetrainMotors), strconv.FormatInt(createdAt, 10), strconv.FormatInt(updatedAt, 10),
+			})
+		}
+
+		writeCSVResponse(w, "pit_scouting_export.csv", records)
+	}
+}
+
+func MatchScoutingExportCSV(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if !canExportScoutingData(user.Role) {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		eventKey := strings.TrimSpace(chi.URLParam(r, "event_key"))
+		if eventKey == "" {
+			writeJSON(w, 400, map[string]string{"error": "event_key is required"})
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT
+				m.event_key,
+				ms.match_key,
+				COALESCE(m.match_number, 0),
+				ms.team_key,
+				COALESCE(t.team_num, 0),
+				COALESCE(ms.scout_name, ''),
+				ms.was_auto,
+				ms.conflicted_own_alliance,
+				ms.conflicted_opposing_alliance,
+				ms.used_outpost,
+				ms.used_depot,
+				COALESCE(ms.cycles, 0),
+				COALESCE(ms.percent_contributed, 0),
+				COALESCE(ms.auto_points_contributed, 0),
+				ms.got_disabled,
+				COALESCE(ms.bps_rating, 0),
+				COALESCE(ms.obvious_penalties, ''),
+				COALESCE(ms.primary_path, ''),
+				ms.index_via_intake,
+				COALESCE(ms.intake_speed, 0),
+				COALESCE(ms.notes, ''),
+				ms.shooter_range_close,
+				ms.shooter_range_mid,
+				ms.shooter_range_far,
+				ms.climb,
+				COALESCE(ms.climb_level, ''),
+				COALESCE(ms.climb_location, ''),
+				COALESCE(ms.accuracy_successful, 0),
+				COALESCE(ms.accuracy_attempted, 0),
+				ms.created_at,
+				ms.updated_at
+			FROM match_scouting_data ms
+			JOIN matches m ON m.match_key = ms.match_key
+			LEFT JOIN teams t ON t.team_key = ms.team_key
+			WHERE m.event_key = ?
+			ORDER BY m.match_number ASC, t.team_num ASC, ms.created_at ASC
+		`, eventKey)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer rows.Close()
+
+		records := [][]string{{
+			"event_key", "match_key", "match_number", "team_key", "team_num", "scout_name",
+			"was_auto", "conflicted_own_alliance", "conflicted_opposing_alliance", "used_outpost",
+			"used_depot", "cycles", "percent_contributed", "auto_points_contributed", "got_disabled",
+			"bps_rating", "obvious_penalties", "primary_path", "index_via_intake", "intake_speed",
+			"notes", "shooter_range_close", "shooter_range_mid", "shooter_range_far", "climb",
+			"climb_level", "climb_location", "accuracy_successful", "accuracy_attempted", "created_at", "updated_at",
+		}}
+
+		for rows.Next() {
+			var rowEventKey, matchKey, teamKey, scoutName, obviousPenalties, primaryPath, notes, climbLevel, climbLocation string
+			var matchNumber, teamNum, cycles, percentContributed, autoPointsContributed, bpsRating, intakeSpeed int
+			var wasAuto, conflictedOwnAlliance, conflictedOpposingAlliance, usedOutpost, usedDepot, gotDisabled bool
+			var indexViaIntake, shooterRangeClose, shooterRangeMid, shooterRangeFar, climb, accuracySuccessful, accuracyAttempted bool
+			var createdAt, updatedAt int64
+
+			if err := rows.Scan(
+				&rowEventKey, &matchKey, &matchNumber, &teamKey, &teamNum, &scoutName,
+				&wasAuto, &conflictedOwnAlliance, &conflictedOpposingAlliance, &usedOutpost,
+				&usedDepot, &cycles, &percentContributed, &autoPointsContributed, &gotDisabled,
+				&bpsRating, &obviousPenalties, &primaryPath, &indexViaIntake, &intakeSpeed,
+				&notes, &shooterRangeClose, &shooterRangeMid, &shooterRangeFar, &climb,
+				&climbLevel, &climbLocation, &accuracySuccessful, &accuracyAttempted, &createdAt, &updatedAt,
+			); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+
+			records = append(records, []string{
+				rowEventKey, matchKey, strconv.Itoa(matchNumber), teamKey, strconv.Itoa(teamNum), scoutName,
+				strconv.FormatBool(wasAuto), strconv.FormatBool(conflictedOwnAlliance), strconv.FormatBool(conflictedOpposingAlliance),
+				strconv.FormatBool(usedOutpost), strconv.FormatBool(usedDepot), strconv.Itoa(cycles),
+				strconv.Itoa(percentContributed), strconv.Itoa(autoPointsContributed), strconv.FormatBool(gotDisabled),
+				strconv.Itoa(bpsRating), obviousPenalties, primaryPath, strconv.FormatBool(indexViaIntake),
+				strconv.Itoa(intakeSpeed), notes, strconv.FormatBool(shooterRangeClose),
+				strconv.FormatBool(shooterRangeMid), strconv.FormatBool(shooterRangeFar), strconv.FormatBool(climb),
+				climbLevel, climbLocation, strconv.FormatBool(accuracySuccessful), strconv.FormatBool(accuracyAttempted),
+				strconv.FormatInt(createdAt, 10), strconv.FormatInt(updatedAt, 10),
+			})
+		}
+
+		filename := fmt.Sprintf("match_scouting_%s.csv", eventKey)
+		writeCSVResponse(w, filename, records)
 	}
 }
 

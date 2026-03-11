@@ -29,9 +29,7 @@ export default function PerformanceGraphs({ matchScoutingData }) {
       autoPointsContributed: match.auto_points_contributed || 0,
       bpsRating: match.bps_rating || 0,
       intakeSpeed: match.intake_speed || 0,
-      accuracyPercentage: (match.accuracy_attempted || 0) > 0
-        ? (((match.accuracy_successful || 0) / match.accuracy_attempted) * 100)
-        : 0,
+      accuracyPercentage: match.accuracy_successful ? 100 : (match.accuracy_attempted ? 0 : 0),
       disabled: match.got_disabled ? 1 : 0,
       autoRan: match.was_auto ? 1 : 0,
     }));

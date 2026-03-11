@@ -15,13 +15,12 @@ import { useTheme } from '../contexts/ThemeContext';
 import apiService from '../utils/apiService';
 
 const STRATEGY_OPTIONS = [
-  '3 offense',
-  '2:1',
-  'feeder',
-  '2 shooters',
-  '2 feeder 1 shooter',
-  'feeder shooter',
-  'defense',
+  '3 Offense',
+  '2 Offense 1 Defense',
+  '2 Offense 1 Feeder',
+  '1 Offense 2 Feeders',
+  '1,1,1',
+  '3 Defense',
 ];
 const AUTO_RESULTS = ['Won', 'Lost', 'Tied'];
 const DEFENSE_QUALITY = ['Good', 'Bad'];
@@ -31,7 +30,6 @@ export default function AllianceScoutingForm({ route, navigation }) {
   const { matchData, allianceColor } = route.params;
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
-    scoutName: '',
     defensePlayed: false,
     defenseQuality: '',
     generalStrategy: [],
@@ -59,7 +57,6 @@ export default function AllianceScoutingForm({ route, navigation }) {
       await apiService.submitAllianceScoutingData({
         match_key: matchData.matchKey || matchData.match_key,
         alliance_color: allianceColor,
-        scout_name: formData.scoutName.trim(),
         defense_played: formData.defensePlayed,
         defense_quality: formData.defenseQuality.toLowerCase(),
         general_strategy: formData.generalStrategy,
@@ -123,16 +120,7 @@ export default function AllianceScoutingForm({ route, navigation }) {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Alliance Summary</Text>
-          <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Scout Name</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text }]}
-              placeholder="Scout name"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={formData.scoutName}
-              onChangeText={(value) => updateField('scoutName', value)}
-            />
-          </View>
+          {renderChoiceRow('Won or lost auto', 'autoResult', AUTO_RESULTS)}
           <View style={styles.switchRow}>
             <Text style={[styles.inputLabel, { color: theme.colors.text }]}>Defense</Text>
             <Switch
@@ -187,7 +175,6 @@ export default function AllianceScoutingForm({ route, navigation }) {
               onChangeText={(value) => updateField('autoPointsScored', value.replace(/[^0-9]/g, ''))}
             />
           </View>
-          {renderChoiceRow('Won or lost auto', 'autoResult', AUTO_RESULTS)}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>

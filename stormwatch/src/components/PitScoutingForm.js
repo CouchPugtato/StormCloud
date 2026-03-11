@@ -16,13 +16,13 @@ import apiService from '../utils/apiService';
 
 const SHOOTER_ARCHETYPES = ['turret', 'double turret', 'barrel', 'single fixed', 'double fixed', 'other'];
 const CLIMB_LEVELS = ['None', 'Low', 'Mid', 'High', 'Traversal'];
+const INDEXER_TYPES = ['Belt', 'Roller', 'Spindexer'];
 
 export default function PitScoutingForm({ route, navigation }) {
   const { theme } = useTheme();
   const { teamNumber, eventKey = '' } = route.params || {};
   const [saving, setSaving] = useState(false);
   const [pitData, setPitData] = useState({
-    scoutName: '',
     estimatedBps: '',
     shooterArchetype: '',
     canTrench: false,
@@ -48,10 +48,6 @@ export default function PitScoutingForm({ route, navigation }) {
     programmingLanguage: '',
     yearsUsedProgrammingLanguage: '',
     indexerType: '',
-    hasSpindexer: false,
-    hasRollers: false,
-    hasBelts: false,
-    indexerOther: '',
     notes: '',
     mustPointAtHub: false,
     motorsBesidesDrivetrain: '0',
@@ -70,7 +66,6 @@ export default function PitScoutingForm({ route, navigation }) {
       await apiService.submitPitScoutingData({
         team_key: `frc${teamNumber}`,
         event_key: eventKey,
-        scout_name: pitData.scoutName.trim(),
         estimated_bps: pitData.estimatedBps.trim(),
         shooter_archetype: pitData.shooterArchetype,
         can_trench: pitData.canTrench,
@@ -96,10 +91,10 @@ export default function PitScoutingForm({ route, navigation }) {
         programming_language: pitData.programmingLanguage.trim(),
         years_used_programming_language: pitData.yearsUsedProgrammingLanguage.trim(),
         indexer_type: pitData.indexerType.trim(),
-        has_spindexer: pitData.hasSpindexer,
-        has_rollers: pitData.hasRollers,
-        has_belts: pitData.hasBelts,
-        indexer_other: pitData.indexerOther.trim(),
+        has_spindexer: false,
+        has_rollers: false,
+        has_belts: false,
+        indexer_other: '',
         notes: pitData.notes.trim(),
         must_point_at_hub: pitData.mustPointAtHub,
         motors_besides_drivetrain: Number(pitData.motorsBesidesDrivetrain || 0),
@@ -185,7 +180,6 @@ export default function PitScoutingForm({ route, navigation }) {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Scout Information</Text>
-          {renderTextInput('Scout Name', 'scoutName', { placeholder: 'Enter your name' })}
           {renderTextInput('Estimated BPS', 'estimatedBps', { keyboardType: 'numeric', numeric: true, placeholder: '0.0' })}
           {renderChoiceRow('Shooter Archetype', 'shooterArchetype', SHOOTER_ARCHETYPES)}
         </View>
@@ -229,11 +223,7 @@ export default function PitScoutingForm({ route, navigation }) {
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Programming & Indexer</Text>
           {renderTextInput('Programming language', 'programmingLanguage', { placeholder: 'Java, C++, Kotlin...' })}
           {renderTextInput('Years used programming language', 'yearsUsedProgrammingLanguage', { placeholder: 'How long?' })}
-          {renderTextInput('Type of indexer', 'indexerType', { placeholder: 'Linear, carousel, etc.' })}
-          {renderToggle('Spindexer', 'hasSpindexer')}
-          {renderToggle('Rollers', 'hasRollers')}
-          {renderToggle('Belts', 'hasBelts')}
-          {renderTextInput('Other', 'indexerOther', { placeholder: 'Other indexer details' })}
+          {renderChoiceRow('Type of indexer', 'indexerType', INDEXER_TYPES)}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
