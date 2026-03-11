@@ -31,6 +31,7 @@ const isMobile = height > width; // mobile devices have height > width
 export default function HomeScreen({ navigation }) {
   const { theme } = useTheme();
   const { user } = useAuth();
+  const canAccessMatchNotes = user?.role === 'drive_team' || user?.role === 'scouting_lead';
   const { isEventMode } = useEventMode();
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [expandedMatch, setExpandedMatch] = useState(null);
@@ -456,9 +457,6 @@ export default function HomeScreen({ navigation }) {
               </View>
             </View>
             
-            <Text style={[styles.notesTitle, { color: theme.colors.text }]}>
-              Notes for {item.matchNumber}
-            </Text>
             <View style={styles.allianceScoutingButtons}>
               <TouchableOpacity
                 style={[styles.allianceScoutingButton, { backgroundColor: '#DC3545' }]}
@@ -473,33 +471,40 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.allianceScoutingButtonText}>Scout Blue Alliance</Text>
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={[styles.notesInput, { 
-                backgroundColor: theme.colors.background,
-                color: theme.colors.text,
-                borderColor: theme.colors.border
-              }]}
-              placeholder="Enter your notes for this match..."
-              placeholderTextColor={theme.colors.textSecondary}
-              value={currentNote}
-              onChangeText={setCurrentNote}
-              multiline
-              numberOfLines={4}
-            />
-            <View style={styles.notesButtons}>
-              <TouchableOpacity 
-                style={[styles.saveButton, { backgroundColor: theme.colors.primary }]}
-                onPress={() => saveMatchNotes(item.id)}
-              >
-                <Text style={styles.saveButtonText}>Save Notes</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.cancelButton, { borderColor: theme.colors.border }]}
-                onPress={() => toggleMatchExpansion(item.id)}
-              >
-                <Text style={[styles.cancelButtonText, { color: theme.colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+            {canAccessMatchNotes ? (
+              <>
+                <Text style={[styles.notesTitle, { color: theme.colors.text }]}>
+                  Notes for {item.matchNumber}
+                </Text>
+                <TextInput
+                  style={[styles.notesInput, { 
+                    backgroundColor: theme.colors.background,
+                    color: theme.colors.text,
+                    borderColor: theme.colors.border
+                  }]}
+                  placeholder="Enter your notes for this match..."
+                  placeholderTextColor={theme.colors.textSecondary}
+                  value={currentNote}
+                  onChangeText={setCurrentNote}
+                  multiline
+                  numberOfLines={4}
+                />
+                <View style={styles.notesButtons}>
+                  <TouchableOpacity 
+                    style={[styles.saveButton, { backgroundColor: theme.colors.primary }]}
+                    onPress={() => saveMatchNotes(item.id)}
+                  >
+                    <Text style={styles.saveButtonText}>Save Notes</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.cancelButton, { borderColor: theme.colors.border }]}
+                    onPress={() => toggleMatchExpansion(item.id)}
+                  >
+                    <Text style={[styles.cancelButtonText, { color: theme.colors.text }]}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
           </View>
         )}
       </View>

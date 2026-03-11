@@ -22,6 +22,10 @@ func canExportScoutingData(role string) bool {
 	return role == "drive_team" || role == "scouting_lead"
 }
 
+func canAccessMatchNotes(role string) bool {
+	return role == "drive_team" || role == "scouting_lead"
+}
+
 func writeCSVResponse(w http.ResponseWriter, filename string, records [][]string) {
 	var buffer bytes.Buffer
 	writer := csv.NewWriter(&buffer)
@@ -2061,9 +2065,18 @@ func MatchScoutingDummyExportCSV(db *sql.DB) http.HandlerFunc {
 // --- NOTES
 func NotesList(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if !canAccessMatchNotes(user.Role) {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
 		match := r.URL.Query().Get("match_key")
 		var rows *sql.Rows
-		var err error
 		if match != "" {
 			rows, err = db.Query(`SELECT id, match_key, team_key, author, note, created_at FROM notes WHERE match_key=? ORDER BY id DESC`, match)
 		} else {
@@ -2091,10 +2104,23 @@ func NotesList(db *sql.DB) http.HandlerFunc {
 
 func NotesCreate(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if !canAccessMatchNotes(user.Role) {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
 		var in struct{ MatchKey, TeamKey, Author, Note string }
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "bad json"})
 			return
+		}
+		if strings.TrimSpace(in.Author) == "" {
+			in.Author = scoutingReportName(user)
 		}
 		now := time.Now().Unix()
 		res, err := db.Exec(`INSERT INTO notes(match_key, team_key, author, note, created_at) VALUES(?,?,?,?,?)`,
