@@ -58,63 +58,6 @@ const mapBackendUser = (backendUser, existingProfile = null) => {
   });
 };
 
-const getMockProfiles = () => [
-  {
-    id: 'mock1',
-    name: 'Alex Chen',
-    role: USER_ROLES.SCOUTER,
-    teamNumber: 1234,
-    createdAt: '2024-01-15T10:00:00.000Z',
-    stats: {
-      totalMatches: 45,
-      eventMatches: {
-        '2024week1': 12,
-        '2024week2': 8,
-        '2024week3': 15,
-        '2024regional': 10,
-      },
-      seasonMatches: 45,
-      allTimeMatches: 127,
-    },
-  },
-  {
-    id: 'mock2',
-    name: 'Jordan Smith',
-    role: USER_ROLES.SCOUTER,
-    teamNumber: 5678,
-    createdAt: '2024-01-20T14:30:00.000Z',
-    stats: {
-      totalMatches: 38,
-      eventMatches: {
-        '2024week1': 10,
-        '2024week2': 12,
-        '2024week3': 8,
-        '2024regional': 8,
-      },
-      seasonMatches: 38,
-      allTimeMatches: 95,
-    },
-  },
-  {
-    id: 'mock3',
-    name: 'Taylor Johnson',
-    role: USER_ROLES.SCOUTER,
-    teamNumber: 9012,
-    createdAt: '2024-02-01T09:15:00.000Z',
-    stats: {
-      totalMatches: 52,
-      eventMatches: {
-        '2024week1': 15,
-        '2024week2': 14,
-        '2024week3': 12,
-        '2024regional': 11,
-      },
-      seasonMatches: 52,
-      allTimeMatches: 52,
-    },
-  },
-].map(normalizeUser);
-
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -161,7 +104,7 @@ export const AuthProvider = ({ children }) => {
     const bootstrap = async () => {
       try {
         const storedProfiles = await AsyncStorage.getItem(PROFILES_STORAGE_KEY);
-        const parsedProfiles = storedProfiles ? JSON.parse(storedProfiles).map(normalizeUser) : getMockProfiles();
+        const parsedProfiles = storedProfiles ? JSON.parse(storedProfiles).map(normalizeUser) : [];
         setUsers(parsedProfiles);
         if (!storedProfiles) {
           await AsyncStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(parsedProfiles));
