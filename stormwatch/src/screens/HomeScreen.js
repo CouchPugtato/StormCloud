@@ -388,7 +388,7 @@ export default function HomeScreen({ navigation }) {
                     
                     return (
                       <View key={index} style={styles.teamEpaRow}>
-                        <TouchableOpacity onPress={() => navigateToScoutingForm(team, item)}>
+                        <TouchableOpacity style={styles.teamEpaTouchTarget} onPress={() => navigateToScoutingForm(team, item)}>
                           {teamDetailsMap[`frc${team}`]?.robot_photo ? (
                             <Image
                               source={{ uri: teamDetailsMap[`frc${team}`].robot_photo }}
@@ -434,7 +434,7 @@ export default function HomeScreen({ navigation }) {
                     
                     return (
                       <View key={index} style={styles.teamEpaRow}>
-                        <TouchableOpacity onPress={() => navigateToScoutingForm(team, item)}>
+                        <TouchableOpacity style={styles.teamEpaTouchTarget} onPress={() => navigateToScoutingForm(team, item)}>
                           {teamDetailsMap[`frc${team}`]?.robot_photo ? (
                             <Image
                               source={{ uri: teamDetailsMap[`frc${team}`].robot_photo }}
@@ -1043,12 +1043,16 @@ const styles = StyleSheet.create({
   },
   teamEpaRow: {
     alignItems: 'center',
-    flex: 1,
+    width: 130,
     paddingHorizontal: 4,
   },
+  teamEpaTouchTarget: {
+    alignItems: 'center',
+    width: '100%',
+  },
   matchTeamPhoto: {
-    width: 52,
-    height: 40,
+    width: 130,
+    height: 100,
     borderRadius: 8,
     marginBottom: 6,
   },
@@ -1056,6 +1060,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 2,
+    textAlign: 'center',
+    width: '100%',
   },
   clickableTeamEpaNumber: {
     fontWeight: '800',
