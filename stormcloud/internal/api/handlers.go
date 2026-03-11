@@ -2095,7 +2095,10 @@ func NotesList(db *sql.DB) http.HandlerFunc {
 		var out []N
 		for rows.Next() {
 			var n N
-			_ = rows.Scan(&n.ID, &n.MatchKey, &n.TeamKey, &n.Author, &n.Note, &n.CreatedAt)
+			if err := rows.Scan(&n.ID, &n.MatchKey, &n.TeamKey, &n.Author, &n.Note, &n.CreatedAt); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
 			out = append(out, n)
 		}
 		writeJSON(w, 200, out)
@@ -2119,6 +2122,17 @@ func NotesCreate(db *sql.DB) http.HandlerFunc {
 			writeJSON(w, 400, map[string]string{"error": "bad json"})
 			return
 		}
+		in.MatchKey = strings.TrimSpace(in.MatchKey)
+		in.TeamKey = strings.TrimSpace(in.TeamKey)
+		in.Note = strings.TrimSpace(in.Note)
+		if in.MatchKey == "" {
+			writeJSON(w, 400, map[string]string{"error": "match_key is required"})
+			return
+		}
+		if in.Note == "" {
+			writeJSON(w, 400, map[string]string{"error": "note is required"})
+			return
+		}
 		if strings.TrimSpace(in.Author) == "" {
 			in.Author = scoutingReportName(user)
 		}
@@ -2130,7 +2144,14 @@ func NotesCreate(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		id, _ := res.LastInsertId()
-		writeJSON(w, 201, map[string]any{"id": id})
+		writeJSON(w, 201, map[string]any{
+			"id":         id,
+			"match_key":  in.MatchKey,
+			"team_key":   in.TeamKey,
+			"author":     in.Author,
+			"note":       in.Note,
+			"created_at": now,
+		})
 	}
 }
 

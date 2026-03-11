@@ -128,6 +128,17 @@ class ApiService {
     return this.request(`/events/${eventKey}/matches`);
   }
 
+  async getMatchNotes(matchKey) {
+    return this.request(`/notes?match_key=${encodeURIComponent(matchKey)}`);
+  }
+
+  async createMatchNote(payload) {
+    return this.request('/notes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async submitMatchScoutingData(data) {
     return this.request('/match-scouting', {
       method: 'POST',

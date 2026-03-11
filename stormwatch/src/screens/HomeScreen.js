@@ -36,7 +36,10 @@ export default function HomeScreen({ navigation }) {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [expandedMatch, setExpandedMatch] = useState(null);
   const [matchNotes, setMatchNotes] = useState({});
-  const [currentNote, setCurrentNote] = useState('');
+  const [matchNoteDrafts, setMatchNoteDrafts] = useState({});
+  const [matchNotesLoading, setMatchNotesLoading] = useState({});
+  const [matchNotesSaving, setMatchNotesSaving] = useState({});
+  const [matchNotesError, setMatchNotesError] = useState({});
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [matchesLoading, setMatchesLoading] = useState(false);
@@ -241,26 +244,62 @@ export default function HomeScreen({ navigation }) {
     fetchMatchesForEvent(selectedEvent);
   }, [selectedEvent, loading]);
 
-  // handle match expansion for notes
-  const toggleMatchExpansion = (matchId) => {
-    if (expandedMatch === matchId) {
-      setExpandedMatch(null);
-      setCurrentNote('');
-    } else {
-      setExpandedMatch(matchId);
-      setCurrentNote(matchNotes[matchId] || '');
+  const loadMatchNotes = async (matchKey) => {
+    if (!matchKey || !canAccessMatchNotes) {
+      return;
+    }
+
+    setMatchNotesLoading((prev) => ({ ...prev, [matchKey]: true }));
+    setMatchNotesError((prev) => ({ ...prev, [matchKey]: '' }));
+    try {
+      const notes = await apiService.getMatchNotes(matchKey);
+      setMatchNotes((prev) => ({ ...prev, [matchKey]: notes }));
+    } catch (error) {
+      setMatchNotesError((prev) => ({
+        ...prev,
+        [matchKey]: error.message || 'Failed to load notes.',
+      }));
+    } finally {
+      setMatchNotesLoading((prev) => ({ ...prev, [matchKey]: false }));
     }
   };
 
-  // save notes of a match
-  const saveMatchNotes = (matchId) => {
-    setMatchNotes(prev => ({
-      ...prev,
-      [matchId]: currentNote
-    }));
-    Alert.alert('Success', 'Notes saved successfully!');
-    setExpandedMatch(null);
-    setCurrentNote('');
+  const toggleMatchExpansion = (match) => {
+    if (expandedMatch === match.id) {
+      setExpandedMatch(null);
+    } else {
+      setExpandedMatch(match.id);
+      if (canAccessMatchNotes) {
+        loadMatchNotes(match.matchKey);
+      }
+    }
+  };
+
+  const saveMatchNotes = async (matchKey) => {
+    const note = (matchNoteDrafts[matchKey] || '').trim();
+    if (!note) {
+      setMatchNotesError((prev) => ({ ...prev, [matchKey]: 'Note is required.' }));
+      return;
+    }
+
+    setMatchNotesSaving((prev) => ({ ...prev, [matchKey]: true }));
+    setMatchNotesError((prev) => ({ ...prev, [matchKey]: '' }));
+    try {
+      const createdNote = await apiService.createMatchNote({ match_key: matchKey, note });
+      setMatchNotes((prev) => ({
+        ...prev,
+        [matchKey]: [createdNote, ...(prev[matchKey] || [])],
+      }));
+      setMatchNoteDrafts((prev) => ({ ...prev, [matchKey]: '' }));
+      await loadMatchNotes(matchKey);
+    } catch (error) {
+      setMatchNotesError((prev) => ({
+        ...prev,
+        [matchKey]: error.message || 'Failed to save note.',
+      }));
+    } finally {
+      setMatchNotesSaving((prev) => ({ ...prev, [matchKey]: false }));
+    }
   };
 
   // open match scouting form
@@ -316,7 +355,7 @@ export default function HomeScreen({ navigation }) {
       <View>
         <TouchableOpacity 
           style={[styles.tableRow, { backgroundColor: getRowBackgroundColor() }]}
-          onPress={() => toggleMatchExpansion(item.id)}
+          onPress={() => toggleMatchExpansion(item)}
         >
           <View style={styles.matchColumn}>
             <Text style={[styles.tableMatchText, { color: theme.colors.text }]}>
@@ -476,6 +515,39 @@ export default function HomeScreen({ navigation }) {
                 <Text style={[styles.notesTitle, { color: theme.colors.text }]}>
                   Notes for {item.matchNumber}
                 </Text>
+                {matchNotesLoading[item.matchKey] ? (
+                  <View style={styles.notesMetaRow}>
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                    <Text style={[styles.notesMetaText, { color: theme.colors.textSecondary }]}>
+                      Loading notes...
+                    </Text>
+                  </View>
+                ) : null}
+                {matchNotes[item.matchKey]?.length ? (
+                  <View style={styles.notesList}>
+                    {matchNotes[item.matchKey].map((note) => (
+                      <View
+                        key={`${note.id}-${note.created_at}`}
+                        style={[styles.noteCard, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
+                      >
+                        <View style={styles.noteCardHeader}>
+                          <Text style={[styles.noteAuthor, { color: theme.colors.text }]} numberOfLines={1}>
+                            {note.author || 'Unknown'}
+                          </Text>
+                          <Text style={[styles.noteTimestamp, { color: theme.colors.textSecondary }]}>
+                            {note.created_at ? new Date(note.created_at * 1000).toLocaleString() : ''}
+                          </Text>
+                        </View>
+                        <Text style={[styles.noteBody, { color: theme.colors.textSecondary }]}>
+                          {note.note}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                {matchNotesError[item.matchKey] ? (
+                  <Text style={styles.notesErrorText}>{matchNotesError[item.matchKey]}</Text>
+                ) : null}
                 <TextInput
                   style={[styles.notesInput, { 
                     backgroundColor: theme.colors.background,
@@ -484,21 +556,32 @@ export default function HomeScreen({ navigation }) {
                   }]}
                   placeholder="Enter your notes for this match..."
                   placeholderTextColor={theme.colors.textSecondary}
-                  value={currentNote}
-                  onChangeText={setCurrentNote}
+                  value={matchNoteDrafts[item.matchKey] || ''}
+                  onChangeText={(text) => {
+                    setMatchNoteDrafts((prev) => ({ ...prev, [item.matchKey]: text }));
+                    if (matchNotesError[item.matchKey]) {
+                      setMatchNotesError((prev) => ({ ...prev, [item.matchKey]: '' }));
+                    }
+                  }}
                   multiline
                   numberOfLines={4}
                 />
                 <View style={styles.notesButtons}>
                   <TouchableOpacity 
-                    style={[styles.saveButton, { backgroundColor: theme.colors.primary }]}
-                    onPress={() => saveMatchNotes(item.id)}
+                    style={[
+                      styles.saveButton,
+                      { backgroundColor: matchNotesSaving[item.matchKey] ? theme.colors.secondary : theme.colors.primary },
+                    ]}
+                    onPress={() => saveMatchNotes(item.matchKey)}
+                    disabled={matchNotesSaving[item.matchKey]}
                   >
-                    <Text style={styles.saveButtonText}>Save Notes</Text>
+                    <Text style={styles.saveButtonText}>
+                      {matchNotesSaving[item.matchKey] ? 'Saving...' : 'Save Notes'}
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={[styles.cancelButton, { borderColor: theme.colors.border }]}
-                    onPress={() => toggleMatchExpansion(item.id)}
+                    onPress={() => toggleMatchExpansion(item)}
                   >
                     <Text style={[styles.cancelButtonText, { color: theme.colors.text }]}>Cancel</Text>
                   </TouchableOpacity>
@@ -920,6 +1003,51 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 12,
+  },
+  notesMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  notesMetaText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  notesList: {
+    gap: 10,
+    marginBottom: 12,
+  },
+  noteCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+  },
+  noteCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 6,
+  },
+  noteAuthor: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  noteTimestamp: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  noteBody: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  notesErrorText: {
+    color: '#DC3545',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 10,
   },
   notesInput: {
     borderWidth: 1,
