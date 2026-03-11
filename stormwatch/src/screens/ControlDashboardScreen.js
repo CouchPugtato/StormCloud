@@ -27,6 +27,14 @@ export default function ControlDashboardScreen() {
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [accountSearchQuery, setAccountSearchQuery] = useState('');
   const [openAccountDropdownID, setOpenAccountDropdownID] = useState('');
+  const [scheduleEventKey, setScheduleEventKey] = useState('');
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleMatches, setScheduleMatches] = useState([]);
+  const [scheduleAssignments, setScheduleAssignments] = useState({});
+  const [scheduleSearchQueries, setScheduleSearchQueries] = useState({});
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [savingScheduleKey, setSavingScheduleKey] = useState('');
+  const [openScheduleDropdownKey, setOpenScheduleDropdownKey] = useState('');
   const [twitchUrl, setTwitchUrl] = useState('');
   const [twitchUrlDraft, setTwitchUrlDraft] = useState('');
   const [savingTwitchUrl, setSavingTwitchUrl] = useState(false);
@@ -89,6 +97,16 @@ export default function ControlDashboardScreen() {
     { key: USER_ROLES.SCOUTER, label: 'Scouters' },
     { key: USER_ROLES.VIEWER, label: 'Viewers' },
   ];
+  const scheduleSlotOptions = [
+    { key: 'red_1', label: 'Red 1' },
+    { key: 'red_2', label: 'Red 2' },
+    { key: 'red_3', label: 'Red 3' },
+    { key: 'blue_1', label: 'Blue 1' },
+    { key: 'blue_2', label: 'Blue 2' },
+    { key: 'blue_3', label: 'Blue 3' },
+    { key: 'red_alliance', label: 'Red Alliance' },
+    { key: 'blue_alliance', label: 'Blue Alliance' },
+  ];
   const isScoutingLead = user?.role === USER_ROLES.SCOUTING_LEAD;
 
   const getAccountDisplayName = (account) =>
@@ -96,6 +114,32 @@ export default function ControlDashboardScreen() {
 
   const getRoleLabel = (roleKey) =>
     upgradableRoleOptions.find((option) => option.key === roleKey)?.label || 'Viewer';
+
+  const getScheduleSlotLabel = (match, slotKey) => {
+    const redTeams = (match.red_teams || []).map((team) => String(team).replace('frc', ''));
+    const blueTeams = (match.blue_teams || []).map((team) => String(team).replace('frc', ''));
+
+    switch (slotKey) {
+      case 'red_1':
+        return `Red 1 | ${redTeams[0] || '-'}`;
+      case 'red_2':
+        return `Red 2 | ${redTeams[1] || '-'}`;
+      case 'red_3':
+        return `Red 3 | ${redTeams[2] || '-'}`;
+      case 'blue_1':
+        return `Blue 1 | ${blueTeams[0] || '-'}`;
+      case 'blue_2':
+        return `Blue 2 | ${blueTeams[1] || '-'}`;
+      case 'blue_3':
+        return `Blue 3 | ${blueTeams[2] || '-'}`;
+      case 'red_alliance':
+        return 'Red Alliance';
+      case 'blue_alliance':
+        return 'Blue Alliance';
+      default:
+        return slotKey;
+    }
+  };
 
   useEffect(() => {
     const loadAccounts = async () => {
@@ -135,6 +179,13 @@ export default function ControlDashboardScreen() {
     loadAppSettings();
   }, [isScoutingLead]);
 
+  useEffect(() => {
+    if (!isScoutingLead) {
+      return;
+    }
+    loadManagedEvents();
+  }, [isScoutingLead]);
+
   const loadManagedEvents = async () => {
     if (!isScoutingLead) {
       return;
@@ -156,6 +207,29 @@ export default function ControlDashboardScreen() {
       loadManagedEvents();
     }
   }, [showEventsModal]);
+
+  useEffect(() => {
+    if (!managedEvents.length) {
+      setScheduleEventKey('');
+      setScheduleMatches([]);
+      setScheduleAssignments({});
+      return;
+    }
+
+    const hasSelectedEvent = managedEvents.some((event) => event.event_key === scheduleEventKey);
+    if (!hasSelectedEvent) {
+      setScheduleEventKey('');
+      setScheduleMatches([]);
+      setScheduleAssignments({});
+    }
+  }, [managedEvents, scheduleEventKey]);
+
+  useEffect(() => {
+    if (!scheduleEventKey) {
+      return;
+    }
+    loadScheduleForEvent(scheduleEventKey);
+  }, [scheduleEventKey]);
 
   const handleRoleUpgrade = async (targetUserID, targetRole) => {
     try {
@@ -190,6 +264,174 @@ export default function ControlDashboardScreen() {
     }))
   ), [filteredAccounts]);
 
+  const selectedScheduleEvent = useMemo(
+    () => managedEvents.find((event) => event.event_key === scheduleEventKey) || null,
+    [managedEvents, scheduleEventKey]
+  );
+
+  const scouterAccounts = useMemo(
+    () => allAccounts
+      .filter((account) => {
+        const role = account.role || USER_ROLES.VIEWER;
+        return role === USER_ROLES.SCOUTER || role === USER_ROLES.SCOUTING_LEAD;
+      })
+      .sort((a, b) => getAccountDisplayName(a).localeCompare(getAccountDisplayName(b))),
+    [allAccounts]
+  );
+
+  const getScheduleSuggestions = (assignmentKey) => {
+    const query = String(scheduleSearchQueries[assignmentKey] || '').trim().toLowerCase();
+    if (!query) {
+      return scouterAccounts.slice(0, 8);
+    }
+
+    return scouterAccounts
+      .filter((account) => {
+        const displayName = getAccountDisplayName(account).toLowerCase();
+        const email = String(account.email || '').toLowerCase();
+        return displayName.includes(query) || email.includes(query);
+      })
+      .slice(0, 8);
+  };
+
+  const renderScheduleEventDetail = () => {
+    if (scheduleLoading) {
+      return (
+        <Text style={[styles.sectionNote, { color: theme.colors.textSecondary }]}>
+          Loading qualification matches...
+        </Text>
+      );
+    }
+
+    if (scheduleMatches.length === 0) {
+      return (
+        <Text style={[styles.sectionNote, { color: theme.colors.textSecondary }]}>
+          No qualification matches are loaded for this event yet.
+        </Text>
+      );
+    }
+
+    return scheduleMatches.map((match) => (
+      <View
+        key={match.match_key}
+        style={[styles.scheduleMatchCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
+      >
+        <View style={styles.scheduleMatchHeader}>
+          <View style={styles.scheduleMatchHeaderText}>
+            <Text style={[styles.scheduleMatchTitle, { color: theme.colors.text }]}>
+              Qual {match.match_number}
+            </Text>
+            <Text style={[styles.scheduleMatchMeta, { color: theme.colors.textSecondary }]}>
+              Red: {(match.red_teams || []).map((team) => team.replace('frc', '')).join(', ')} | Blue: {(match.blue_teams || []).map((team) => team.replace('frc', '')).join(', ')}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.scheduleSlotsGrid}>
+          {scheduleSlotOptions.map((slot) => {
+            const assignmentKey = `${match.match_key}:${slot.key}`;
+            const selectedUserID = scheduleAssignments[assignmentKey] || '';
+            const selectedScouter = scouterAccounts.find((account) => account.id === selectedUserID);
+            const isOpen = openScheduleDropdownKey === assignmentKey;
+            const isSaving = savingScheduleKey === assignmentKey;
+            const inputValue =
+              scheduleSearchQueries[assignmentKey] ??
+              (selectedScouter ? getAccountDisplayName(selectedScouter) : '');
+            const suggestions = isOpen ? getScheduleSuggestions(assignmentKey) : [];
+
+            return (
+              <View
+                key={assignmentKey}
+                style={[
+                  styles.scheduleSlotCard,
+                  isOpen && styles.scheduleSlotCardOpen,
+                  Platform.OS === 'web' ? styles.scheduleSlotCardWeb : styles.scheduleSlotCardMobile,
+                ]}
+              >
+                <Text style={[styles.scheduleSlotLabel, { color: theme.colors.textSecondary }]}>
+                  {getScheduleSlotLabel(match, slot.key)}
+                </Text>
+                <TextInput
+                  style={[
+                    styles.scheduleSearchInput,
+                    {
+                      borderColor: theme.colors.border,
+                      backgroundColor: theme.colors.background,
+                      color: theme.colors.text,
+                    },
+                    isOpen && { borderColor: theme.colors.primary },
+                  ]}
+                  value={isSaving ? 'Saving...' : inputValue}
+                  onFocus={() => setOpenScheduleDropdownKey(assignmentKey)}
+                  onChangeText={(text) => {
+                    setScheduleSearchQueries((prev) => ({ ...prev, [assignmentKey]: text }));
+                    setOpenScheduleDropdownKey(assignmentKey);
+                  }}
+                  placeholder="Search member"
+                  placeholderTextColor={theme.colors.textSecondary}
+                  autoCorrect={false}
+                  autoCapitalize="words"
+                  editable={!isSaving}
+                />
+                {isOpen ? (
+                  <View
+                    style={[
+                      styles.scheduleDropdownMenu,
+                      {
+                        borderColor: theme.colors.border,
+                        backgroundColor: theme.colors.surface,
+                        shadowColor: '#000',
+                      },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        styles.scheduleDropdownOption,
+                        {
+                          backgroundColor: theme.colors.surface,
+                          borderBottomColor: theme.colors.borderLight,
+                        },
+                      ]}
+                      onPress={() => handleScheduleAssignmentChange(scheduleEventKey, match.match_key, slot.key, '')}
+                    >
+                      <Text style={[styles.scheduleDropdownOptionText, { color: theme.colors.textSecondary }]}>
+                        Unassigned
+                      </Text>
+                    </TouchableOpacity>
+                    {suggestions.map((account) => (
+                      <TouchableOpacity
+                        key={`${assignmentKey}-${account.id}`}
+                        style={[
+                          styles.scheduleDropdownOption,
+                          {
+                            backgroundColor:
+                              account.id === selectedUserID ? `${theme.colors.primary}22` : theme.colors.surface,
+                            borderBottomColor: theme.colors.borderLight,
+                          },
+                        ]}
+                        onPress={() => handleScheduleAssignmentChange(scheduleEventKey, match.match_key, slot.key, account.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.scheduleDropdownOptionText,
+                            { color: account.id === selectedUserID ? theme.colors.primary : theme.colors.text },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {getAccountDisplayName(account)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    ));
+  };
+
   const handleSaveTwitchURL = async () => {
     if (savingTwitchUrl) {
       return;
@@ -209,6 +451,81 @@ export default function ControlDashboardScreen() {
     } finally {
       setSavingTwitchUrl(false);
     }
+  };
+
+  const loadScheduleForEvent = async (eventKey) => {
+    if (!eventKey) {
+      setScheduleMatches([]);
+      setScheduleAssignments({});
+      return;
+    }
+
+    setScheduleLoading(true);
+    try {
+      const [matches, assignments] = await Promise.all([
+        apiService.getEventMatches(eventKey),
+        apiService.getScoutingSchedule(eventKey),
+      ]);
+
+      const qualificationMatches = (matches || [])
+        .filter((match) => String(match.comp_level || '').toLowerCase() === 'qm')
+        .sort((a, b) => Number(a.match_number || 0) - Number(b.match_number || 0));
+
+      const assignmentMap = {};
+      (assignments || []).forEach((item) => {
+        assignmentMap[`${item.match_key}:${item.slot_key}`] = item.user_id || '';
+      });
+
+      setScheduleMatches(qualificationMatches);
+      setScheduleAssignments(assignmentMap);
+      setScheduleSearchQueries({});
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to load scouting schedule.');
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const handleScheduleAssignmentChange = async (eventKey, matchKey, slotKey, userID) => {
+    const scheduleKey = `${matchKey}:${slotKey}`;
+    setSavingScheduleKey(scheduleKey);
+    try {
+      await apiService.saveScoutingScheduleAssignment({
+        event_key: eventKey,
+        match_key: matchKey,
+        slot_key: slotKey,
+        user_id: userID,
+      });
+      setScheduleAssignments((prev) => ({
+        ...prev,
+        [scheduleKey]: userID,
+      }));
+      setScheduleSearchQueries((prev) => ({
+        ...prev,
+        [scheduleKey]: userID
+          ? getAccountDisplayName(scouterAccounts.find((account) => account.id === userID) || {}) || ''
+          : '',
+      }));
+      setOpenScheduleDropdownKey('');
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Unable to update scouting schedule.');
+    } finally {
+      setSavingScheduleKey('');
+    }
+  };
+
+  const openScheduleModal = (eventKey) => {
+    setOpenScheduleDropdownKey('');
+    setScheduleSearchQueries({});
+    setScheduleEventKey(eventKey);
+    setShowScheduleModal(true);
+  };
+
+  const closeScheduleModal = () => {
+    setOpenScheduleDropdownKey('');
+    setScheduleSearchQueries({});
+    setScheduleEventKey('');
+    setShowScheduleModal(false);
   };
 
   const resetManualEventForm = () => {
@@ -540,7 +857,7 @@ export default function ControlDashboardScreen() {
         </Text>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>System Settings</Text>
           <View style={[styles.preferenceRow, styles.preferenceRowWithBorder, { borderBottomColor: theme.colors.borderLight }]}>
@@ -617,6 +934,43 @@ export default function ControlDashboardScreen() {
               <Text style={styles.manageEventsButtonText}>Manage</Text>
             </TouchableOpacity>
           </View>
+        </View>
+
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Scouting Schedule</Text>
+          <Text style={[styles.sectionNote, { color: theme.colors.textSecondary }]}>
+            Assign scouters to each qualification match for team and alliance scouting.
+          </Text>
+          {scouterAccounts.length === 0 ? (
+            <Text style={[styles.sectionNote, { color: theme.colors.textSecondary }]}>
+              No scouter or scouting lead accounts are available to schedule yet.
+            </Text>
+          ) : (
+            <>
+              {managedEvents.length === 0 ? (
+                <Text style={[styles.sectionNote, { color: theme.colors.textSecondary }]}>
+                  Add an event to start scheduling.
+                </Text>
+              ) : (
+                <View style={styles.scheduleEventGrid}>
+                  {managedEvents.map((event) => (
+                    <TouchableOpacity
+                      key={event.event_key}
+                      style={[styles.scheduleEventCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.background }]}
+                      onPress={() => openScheduleModal(event.event_key)}
+                    >
+                      <Text style={[styles.scheduleEventCardTitle, { color: theme.colors.text }]} numberOfLines={2}>
+                        {event.name || event.event_key}
+                      </Text>
+                      <Text style={[styles.scheduleEventCardMeta, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                        {event.event_key}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
@@ -791,7 +1145,7 @@ export default function ControlDashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalContent}>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
               <View style={styles.formModeRow}>
                 <TouchableOpacity
@@ -1105,6 +1459,36 @@ export default function ControlDashboardScreen() {
         </View>
       </Modal>
 
+      <Modal
+        visible={showScheduleModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeScheduleModal}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+          <View style={[styles.modalHeader, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+            <View style={styles.scheduleModalHeaderText}>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
+                {selectedScheduleEvent?.name || scheduleEventKey || 'Scouting Schedule'}
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+                Qualification match scheduling
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={closeScheduleModal}
+            >
+              <Ionicons name="close" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {renderScheduleEventDetail()}
+          </ScrollView>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -1160,6 +1544,10 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     padding: 20,
+  },
+  scheduleModalHeaderText: {
+    flex: 1,
+    paddingRight: 12,
   },
   inlineSectionHeader: {
     flexDirection: 'row',
@@ -1433,6 +1821,146 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     marginTop: 10,
+  },
+  scheduleEventSelector: {
+    gap: 10,
+    paddingBottom: 10,
+    marginTop: 10,
+  },
+  scheduleEventGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  scheduleEventCard: {
+    width: Platform.OS === 'web' ? '24%' : '48%',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    minHeight: 96,
+    justifyContent: 'space-between',
+  },
+  scheduleEventCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  scheduleEventCardMeta: {
+    fontSize: 12,
+    marginTop: 10,
+  },
+  scheduleEventChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  scheduleEventChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  scheduleEventChipTextActive: {
+    color: 'white',
+  },
+  scheduleMatchCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+    overflow: 'visible',
+  },
+  scheduleMatchHeader: {
+    marginBottom: 12,
+  },
+  scheduleSelectedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  scheduleSelectedTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  scheduleSelectedMeta: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  scheduleMatchHeaderText: {
+    flex: 1,
+  },
+  scheduleMatchTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  scheduleMatchMeta: {
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  scheduleSlotsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  scheduleSlotCard: {
+    position: 'relative',
+    zIndex: 2,
+    overflow: 'visible',
+  },
+  scheduleSlotCardOpen: {
+    zIndex: 50,
+    elevation: 20,
+  },
+  scheduleSlotCardWeb: {
+    width: '24%',
+    minWidth: 170,
+  },
+  scheduleSlotCardMobile: {
+    width: '48%',
+  },
+  scheduleSlotLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  scheduleSearchInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    fontSize: 13,
+    fontWeight: '600',
+    outlineWidth: 0,
+  },
+  scheduleDropdownMenu: {
+    position: 'absolute',
+    top: 58,
+    left: 0,
+    right: 0,
+    borderWidth: 1,
+    borderRadius: 10,
+    overflow: 'hidden',
+    zIndex: 5,
+    maxHeight: 220,
+    elevation: 10,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    opacity: 1,
+  },
+  scheduleDropdownOption: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    opacity: 1,
+  },
+  scheduleDropdownOptionText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   accountSearchRow: {
     flexDirection: 'row',

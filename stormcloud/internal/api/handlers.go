@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -2075,5 +2076,260 @@ func BatteryInventorySave(db *sql.DB) http.HandlerFunc {
 		}
 
 		writeJSON(w, 200, map[string]any{"ok": true, "count": len(payload.Items)})
+	}
+}
+
+func ScoutingScheduleList(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		eventKey := strings.TrimSpace(r.URL.Query().Get("event_key"))
+		if eventKey == "" {
+			writeJSON(w, 400, map[string]string{"error": "event_key is required"})
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT event_key, match_key, slot_key, COALESCE(user_id, ''), assigned_by_user_id, assigned_at
+			FROM scouting_schedule_assignments
+			WHERE event_key=?
+			ORDER BY match_key, slot_key
+		`, eventKey)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer rows.Close()
+
+		type assignment struct {
+			EventKey         string  `json:"event_key"`
+			MatchKey         string  `json:"match_key"`
+			SlotKey          string  `json:"slot_key"`
+			UserID           *string `json:"user_id"`
+			AssignedByUserID string  `json:"assigned_by_user_id"`
+			AssignedAt       int64   `json:"assigned_at"`
+		}
+
+		out := make([]assignment, 0)
+		for rows.Next() {
+			var item assignment
+			var userID string
+			if err := rows.Scan(&item.EventKey, &item.MatchKey, &item.SlotKey, &userID, &item.AssignedByUserID, &item.AssignedAt); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if strings.TrimSpace(userID) != "" {
+				item.UserID = &userID
+			}
+			out = append(out, item)
+		}
+
+		writeJSON(w, 200, out)
+	}
+}
+
+func ScoutingScheduleMe(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+
+		rows, err := db.Query(`
+			SELECT
+				sa.event_key,
+				sa.match_key,
+				sa.slot_key,
+				m.comp_level,
+				m.set_number,
+				m.match_number,
+				COALESCE(m.time_real, 0),
+				COALESCE(m.time_pred, 0),
+				COALESCE(m.red_teams, '[]'),
+				COALESCE(m.blue_teams, '[]'),
+				COALESCE(e.name, '')
+			FROM scouting_schedule_assignments sa
+			JOIN matches m ON m.match_key = sa.match_key
+			LEFT JOIN events e ON e.event_key = sa.event_key
+			WHERE sa.user_id=?
+			ORDER BY COALESCE(NULLIF(m.time_real, 0), NULLIF(m.time_pred, 0), 9223372036854775807), sa.event_key, m.match_number
+		`, user.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		defer rows.Close()
+
+		type scheduledMatch struct {
+			EventKey    string   `json:"event_key"`
+			EventName   string   `json:"event_name"`
+			MatchKey    string   `json:"match_key"`
+			SlotKey     string   `json:"slot_key"`
+			CompLevel   string   `json:"comp_level"`
+			SetNumber   int      `json:"set_number"`
+			MatchNumber int      `json:"match_number"`
+			TimeReal    int64    `json:"time_real"`
+			TimePred    int64    `json:"time_pred"`
+			RedTeams    []string `json:"red_teams"`
+			BlueTeams   []string `json:"blue_teams"`
+		}
+
+		out := make([]scheduledMatch, 0)
+		for rows.Next() {
+			var item scheduledMatch
+			var redTeamsJSON, blueTeamsJSON string
+			if err := rows.Scan(
+				&item.EventKey,
+				&item.MatchKey,
+				&item.SlotKey,
+				&item.CompLevel,
+				&item.SetNumber,
+				&item.MatchNumber,
+				&item.TimeReal,
+				&item.TimePred,
+				&redTeamsJSON,
+				&blueTeamsJSON,
+				&item.EventName,
+			); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if err := json.Unmarshal([]byte(redTeamsJSON), &item.RedTeams); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if err := json.Unmarshal([]byte(blueTeamsJSON), &item.BlueTeams); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			out = append(out, item)
+		}
+
+		writeJSON(w, 200, out)
+	}
+}
+
+func ScoutingScheduleSave(db *sql.DB) http.HandlerFunc {
+	type in struct {
+		EventKey string `json:"event_key"`
+		MatchKey string `json:"match_key"`
+		SlotKey  string `json:"slot_key"`
+		UserID   string `json:"user_id"`
+	}
+
+	validSlots := map[string]bool{
+		"red_1":         true,
+		"red_2":         true,
+		"red_3":         true,
+		"blue_1":        true,
+		"blue_2":        true,
+		"blue_3":        true,
+		"red_alliance":  true,
+		"blue_alliance": true,
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role != "scouting_lead" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		var payload in
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+
+		payload.EventKey = strings.TrimSpace(payload.EventKey)
+		payload.MatchKey = strings.TrimSpace(payload.MatchKey)
+		payload.SlotKey = strings.TrimSpace(payload.SlotKey)
+		payload.UserID = strings.TrimSpace(payload.UserID)
+
+		if payload.EventKey == "" || payload.MatchKey == "" || !validSlots[payload.SlotKey] {
+			writeJSON(w, 400, map[string]string{"error": "invalid schedule payload"})
+			return
+		}
+
+		var matchCount int
+		if err := db.QueryRow(`
+			SELECT COUNT(1)
+			FROM matches
+			WHERE event_key=? AND match_key=? AND LOWER(COALESCE(comp_level, ''))='qm'
+		`, payload.EventKey, payload.MatchKey).Scan(&matchCount); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if matchCount == 0 {
+			writeJSON(w, 400, map[string]string{"error": "match must be a qualification match in the selected event"})
+			return
+		}
+
+		if payload.UserID != "" {
+			var role string
+			if err := db.QueryRow(`SELECT role FROM users WHERE id=?`, payload.UserID).Scan(&role); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					writeJSON(w, 404, map[string]string{"error": "user not found"})
+					return
+				}
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if role != "scouter" && role != "scouting_lead" {
+				writeJSON(w, 400, map[string]string{"error": "only scouter and scouting lead accounts can be scheduled"})
+				return
+			}
+		}
+
+		now := time.Now().Unix()
+		if payload.UserID == "" {
+			if _, err := db.Exec(`DELETE FROM scouting_schedule_assignments WHERE match_key=? AND slot_key=?`, payload.MatchKey, payload.SlotKey); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, map[string]any{
+				"ok":        true,
+				"event_key": payload.EventKey,
+				"match_key": payload.MatchKey,
+				"slot_key":  payload.SlotKey,
+				"user_id":   nil,
+			})
+			return
+		}
+
+		_, err = db.Exec(`
+			INSERT INTO scouting_schedule_assignments(event_key, match_key, slot_key, user_id, assigned_by_user_id, assigned_at)
+			VALUES(?,?,?,?,?,?)
+			ON CONFLICT(match_key, slot_key) DO UPDATE SET
+				event_key=excluded.event_key,
+				user_id=excluded.user_id,
+				assigned_by_user_id=excluded.assigned_by_user_id,
+				assigned_at=excluded.assigned_at
+		`, payload.EventKey, payload.MatchKey, payload.SlotKey, payload.UserID, user.ID, now)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"ok":        true,
+			"event_key": payload.EventKey,
+			"match_key": payload.MatchKey,
+			"slot_key":  payload.SlotKey,
+			"user_id":   payload.UserID,
+		})
 	}
 }

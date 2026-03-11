@@ -327,6 +327,21 @@ class ApiService {
     });
   }
 
+  async getScoutingSchedule(eventKey) {
+    return this.request(`/scouting-schedule?event_key=${encodeURIComponent(eventKey)}`);
+  }
+
+  async getMyScoutingSchedule() {
+    return this.request('/scouting-schedule/me');
+  }
+
+  async saveScoutingScheduleAssignment(payload) {
+    return this.request('/scouting-schedule', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getBatteryTrackerEntries() {
     return this.request('/battery-tracker');
   }

@@ -12,6 +12,7 @@ import {
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 import { platformUtils } from '../utils/platformUtils';
@@ -34,6 +35,8 @@ export default function ProfileScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushStatusText, setPushStatusText] = useState('Push notifications are disabled for this browser/device session.');
+  const [scheduledMatches, setScheduledMatches] = useState([]);
+  const [scheduledMatchesLoading, setScheduledMatchesLoading] = useState(false);
 
   const roleOptions = [
     { key: USER_ROLES.VIEWER, label: 'Viewer' },
@@ -43,41 +46,6 @@ export default function ProfileScreen() {
   ];
   const currentRole = user?.role || USER_ROLES.VIEWER;
   const isAuthModalLarge = authMode === 'signup';
-
-  const upcomingMatches = [
-    {
-      id: 1,
-      matchNumber: 'Qual 32',
-      redAlliance: [1234, 5678, 9012],
-      blueAlliance: [3456, 7890, 1357],
-      userTeam: 5678, // team user is supposed to scout
-      allianceColor: 'red'
-    },
-    {
-      id: 2,
-      matchNumber: 'Qual 45',
-      redAlliance: [2468, 1357, 9753],
-      blueAlliance: [8642, 1111, 2222],
-      userTeam: 1111,
-      allianceColor: 'blue'
-    },
-    {
-      id: 3,
-      matchNumber: 'Qual 61',
-      redAlliance: [3333, 4444, 5555],
-      blueAlliance: [6666, 7777, 8888],
-      userTeam: 4444,
-      allianceColor: 'red'
-    },
-    {
-      id: 4,
-      matchNumber: 'Qual 78',
-      redAlliance: [9999, 1010, 1212],
-      blueAlliance: [1313, 1414, 1515],
-      userTeam: 1313,
-      allianceColor: 'blue'
-    }
-  ];
 
   const events = [
     { key: '2024week1', name: '2024 Week 1' },
@@ -89,6 +57,64 @@ export default function ProfileScreen() {
   const leaderboardData = useMemo(() => {
     return getLeaderboard(leaderboardType, selectedEvent);
   }, [getLeaderboard, leaderboardType, selectedEvent]);
+
+  const loadScheduledMatches = async () => {
+    if (!user) {
+      setScheduledMatches([]);
+      return;
+    }
+
+    setScheduledMatchesLoading(true);
+    try {
+      const scheduled = await apiService.getMyScoutingSchedule();
+      const normalized = (scheduled || []).map((item, index) => {
+        const redAlliance = (item.red_teams || []).map((team) => parseInt(String(team).replace('frc', ''), 10));
+        const blueAlliance = (item.blue_teams || []).map((team) => parseInt(String(team).replace('frc', ''), 10));
+        const slotKey = item.slot_key || '';
+        const isAllianceAssignment = slotKey.endsWith('alliance');
+        const assignedAllianceColor = slotKey.startsWith('red') ? 'red' : 'blue';
+        const assignedTeamIndex = isAllianceAssignment ? -1 : Number((slotKey.split('_')[1] || '1')) - 1;
+        const assignedTeam =
+          !isAllianceAssignment && assignedTeamIndex >= 0
+            ? (assignedAllianceColor === 'red' ? redAlliance : blueAlliance)[assignedTeamIndex]
+            : null;
+
+        return {
+          id: `${item.match_key}-${slotKey}-${index}`,
+          matchKey: item.match_key,
+          eventKey: item.event_key,
+          eventName: item.event_name || item.event_key,
+          matchNumber: `Qual ${item.match_number}`,
+          redAlliance,
+          blueAlliance,
+          assignmentLabel: slotKey === 'red_alliance'
+            ? 'Red Alliance'
+            : slotKey === 'blue_alliance'
+              ? 'Blue Alliance'
+              : `${assignedAllianceColor === 'red' ? 'Red' : 'Blue'} ${assignedTeamIndex + 1}`,
+          assignedAllianceColor,
+          assignedTeam,
+          isAllianceAssignment,
+        };
+      });
+      setScheduledMatches(normalized);
+    } catch (error) {
+      console.error('Unable to load scheduled matches:', error);
+      setScheduledMatches([]);
+    } finally {
+      setScheduledMatchesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadScheduledMatches();
+  }, [user?.id]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadScheduledMatches();
+    }, [user?.id])
+  );
 
   const showInfo = (title, message) => {
     if (Platform.OS === 'web') {
@@ -661,31 +687,46 @@ export default function ProfileScreen() {
   };
 
   const renderUpcomingMatches = () => {
-    const title = user ? 'Your Next Matches' : 'Sample Upcoming Matches';
-    
+    const title = user ? 'Your Next Matches' : 'Upcoming Matches';
+      
     return (
       <View style={styles.upcomingMatchesContainer}>
         <Text style={[styles.upcomingMatchesTitle, { color: theme.colors.text }]}>{title}</Text>
+        {scheduledMatchesLoading ? (
+          <View style={styles.scheduledMatchesLoading}>
+            <Text style={[styles.emptyLeaderboardText, { color: theme.colors.textSecondary }]}>
+              Loading scheduled matches...
+            </Text>
+          </View>
+        ) : (
         <FlatList
-          data={upcomingMatches}
-          keyExtractor={(item) => item.id.toString()}
-          horizontal={true}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalMatchList}
-          renderItem={({ item, index }) => {
-            const scoutTeam = item.allianceColor === 'red' ? item.blueAlliance[0] : item.redAlliance[0];
-            
-            return (
-              <View style={[
+            data={scheduledMatches}
+            keyExtractor={(item) => item.id.toString()}
+            horizontal={true}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalMatchList}
+            renderItem={({ item }) => {
+              const scoutTeam = item.assignedTeam;
+              
+              return (
+                <View style={[
                 styles.compactMatchItem, 
                 { backgroundColor: theme.colors.surface }
               ]}>
-                <View style={styles.compactMatchHeader}>
-                  <Text style={[styles.compactMatchNumber, { color: theme.colors.text }]}>
-                    {item.matchNumber}
-                  </Text>
-                </View>
-                <View style={styles.compactAlliancesContainer}>
+                  <View style={styles.compactMatchHeader}>
+                    <View>
+                      <Text style={[styles.compactMatchNumber, { color: theme.colors.text }]}>
+                        {item.matchNumber}
+                      </Text>
+                      <Text style={[styles.compactMatchEvent, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                        {item.eventName}
+                      </Text>
+                    </View>
+                    <Text style={[styles.compactAssignmentLabel, { color: theme.colors.primary }]}>
+                      {item.assignmentLabel}
+                    </Text>
+                  </View>
+                  <View style={styles.compactAlliancesContainer}>
                   <View style={styles.compactAllianceRow}>
                     <Text style={[styles.compactAllianceLabel, { color: '#FF4444' }]}>Red:</Text>
                     <View style={styles.compactTeamsRow}>
@@ -726,16 +767,44 @@ export default function ProfileScreen() {
                       ))}
                     </View>
                   </View>
-                </View>
-                <View style={styles.compactScoutingInfo}>
-                    <TouchableOpacity style={[styles.scoutButton, { backgroundColor: theme.colors.primary }]}>
-                      <Text style={styles.scoutButtonText}>Scout</Text>
-                    </TouchableOpacity>
                   </View>
+                  <View style={styles.compactScoutingInfo}>
+                      <TouchableOpacity
+                        style={[styles.scoutButton, { backgroundColor: theme.colors.primary }]}
+                        onPress={() => {
+                          if (item.isAllianceAssignment) {
+                            navigation.navigate('AllianceScoutingForm', {
+                              allianceColor: item.assignedAllianceColor,
+                              matchData: item,
+                            });
+                            return;
+                          }
+
+                          if (item.assignedTeam) {
+                            navigation.navigate('MatchScoutingForm', {
+                              teamNumber: item.assignedTeam,
+                              matchData: item,
+                            });
+                          }
+                        }}
+                      >
+                        <Text style={styles.scoutButtonText}>
+                          {item.isAllianceAssignment ? 'Scout Alliance' : 'Scout Team'}
+                        </Text>
+                      </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            }}
+            ListEmptyComponent={
+              <View style={styles.scheduledMatchesEmpty}>
+                <Text style={[styles.emptyLeaderboardText, { color: theme.colors.textSecondary }]}>
+                  No scheduled qualification matches yet.
+                </Text>
               </View>
-            );
-          }}
-        />
+            }
+          />
+        )}
       </View>
     );
   };
@@ -1516,12 +1585,23 @@ const styles = StyleSheet.create({
   compactMatchHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
+    gap: 8,
   },
   compactMatchNumber: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  compactMatchEvent: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  compactAssignmentLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'right',
+    maxWidth: 110,
   },
 
   compactAlliancesContainer: {
@@ -1565,6 +1645,14 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  scheduledMatchesLoading: {
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+  },
+  scheduledMatchesEmpty: {
+    paddingHorizontal: 15,
+    paddingVertical: 20,
   },
   scoutButton: {
     flexDirection: 'row',
