@@ -10,6 +10,7 @@ import {
   FlatList,
   Platform,
   Switch,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -37,6 +38,7 @@ export default function ProfileScreen() {
   const [pushStatusText, setPushStatusText] = useState('Push notifications are disabled for this browser/device session.');
   const [scheduledMatches, setScheduledMatches] = useState([]);
   const [scheduledMatchesLoading, setScheduledMatchesLoading] = useState(false);
+  const [scheduledTeamDetails, setScheduledTeamDetails] = useState({});
 
   const roleOptions = [
     { key: USER_ROLES.VIEWER, label: 'Viewer' },
@@ -98,9 +100,15 @@ export default function ProfileScreen() {
         };
       });
       setScheduledMatches(normalized);
+      const assignedTeamKeys = normalized
+        .filter((item) => item.assignedTeam)
+        .map((item) => `frc${item.assignedTeam}`);
+      const details = await apiService.getTeamsDetails(assignedTeamKeys);
+      setScheduledTeamDetails(details);
     } catch (error) {
       console.error('Unable to load scheduled matches:', error);
       setScheduledMatches([]);
+      setScheduledTeamDetails({});
     } finally {
       setScheduledMatchesLoading(false);
     }
@@ -713,6 +721,13 @@ export default function ProfileScreen() {
                 styles.compactMatchItem, 
                 { backgroundColor: theme.colors.surface }
               ]}>
+                  {scoutTeam && scheduledTeamDetails[`frc${scoutTeam}`]?.robot_photo ? (
+                    <Image
+                      source={{ uri: scheduledTeamDetails[`frc${scoutTeam}`].robot_photo }}
+                      style={styles.compactMatchRobotPhoto}
+                      resizeMode="cover"
+                    />
+                  ) : null}
                   <View style={styles.compactMatchHeader}>
                     <View>
                       <Text style={[styles.compactMatchNumber, { color: theme.colors.text }]}>
@@ -1578,6 +1593,12 @@ const styles = StyleSheet.create({
     width: 280,
     minHeight: 160,
     ...platformUtils.getPlatformElevation(2),
+  },
+  compactMatchRobotPhoto: {
+    width: '100%',
+    height: 108,
+    borderRadius: 10,
+    marginBottom: 10,
   },
   horizontalMatchList: {
     paddingHorizontal: 15,

@@ -1,0 +1,1 @@
+ALTER TABLE teams ADD COLUMN robot_photo TEXT NOT NULL DEFAULT '';

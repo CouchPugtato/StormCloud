@@ -40,14 +40,14 @@ func TeamsSearch(db *sql.DB) http.HandlerFunc {
 
 		if q == "" {
 			rows, err = db.Query(`
-				SELECT team_key, team_num, name, city, state, country, rookie_year
+				SELECT team_key, team_num, name, city, state, country, rookie_year, COALESCE(robot_photo, '')
 				FROM teams
 				ORDER BY team_num ASC LIMIT ?
 			`, limit)
 		} else {
 			// search by number or name
 			rows, err = db.Query(`
-				SELECT team_key, team_num, name, city, state, country, rookie_year
+				SELECT team_key, team_num, name, city, state, country, rookie_year, COALESCE(robot_photo, '')
 				FROM teams
 				WHERE CAST(team_num AS TEXT) LIKE ? OR LOWER(name) LIKE LOWER(?)
 				ORDER BY team_num ASC LIMIT ?
@@ -68,11 +68,12 @@ func TeamsSearch(db *sql.DB) http.HandlerFunc {
 			State      string `json:"state"`
 			Country    string `json:"country"`
 			RookieYear int    `json:"rookie_year"`
+			RobotPhoto string `json:"robot_photo"`
 		}
 		var out []team
 		for rows.Next() {
 			var t team
-			_ = rows.Scan(&t.TeamKey, &t.TeamNum, &t.Name, &t.City, &t.State, &t.Country, &t.RookieYear)
+			_ = rows.Scan(&t.TeamKey, &t.TeamNum, &t.Name, &t.City, &t.State, &t.Country, &t.RookieYear, &t.RobotPhoto)
 			out = append(out, t)
 		}
 		writeJSON(w, 200, out)
@@ -92,7 +93,8 @@ func TeamGet(db *sql.DB) http.HandlerFunc {
 				COALESCE(country, ''),
 				COALESCE(rookie_year, 0),
 				COALESCE(pit_notes, ''),
-				COALESCE(scouting_notes, '')
+				COALESCE(scouting_notes, ''),
+				COALESCE(robot_photo, '')
 			FROM teams
 			WHERE team_key=?
 		`, key)
@@ -106,9 +108,10 @@ func TeamGet(db *sql.DB) http.HandlerFunc {
 			Rookie        int                    `json:"rookie_year"`
 			PitNotes      string                 `json:"pit_notes"`
 			ScoutingNotes string                 `json:"scouting_notes"`
+			RobotPhoto    string                 `json:"robot_photo"`
 			EPA           map[string]interface{} `json:"epa,omitempty"`
 		}
-		if err := row.Scan(&t.TeamKey, &t.TeamNum, &t.Name, &t.City, &t.State, &t.Country, &t.Rookie, &t.PitNotes, &t.ScoutingNotes); err != nil {
+		if err := row.Scan(&t.TeamKey, &t.TeamNum, &t.Name, &t.City, &t.State, &t.Country, &t.Rookie, &t.PitNotes, &t.ScoutingNotes, &t.RobotPhoto); err != nil {
 			writeJSON(w, 404, map[string]string{"error": "not found"})
 			return
 		}
@@ -124,6 +127,58 @@ func TeamGet(db *sql.DB) http.HandlerFunc {
 		}
 
 		writeJSON(w, 200, t)
+	}
+}
+
+func TeamPhotoUpdate(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _, err := getAuthenticatedUser(db, r)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if user.Role == "viewer" {
+			writeJSON(w, 403, map[string]string{"error": "forbidden"})
+			return
+		}
+
+		key := chi.URLParam(r, "team_key")
+		var in struct {
+			RobotPhoto string `json:"robot_photo"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "bad json"})
+			return
+		}
+
+		in.RobotPhoto = strings.TrimSpace(in.RobotPhoto)
+		if in.RobotPhoto != "" {
+			if !strings.HasPrefix(in.RobotPhoto, "data:image/") {
+				writeJSON(w, 400, map[string]string{"error": "robot_photo must be an image data URL"})
+				return
+			}
+			if len(in.RobotPhoto) > 4_000_000 {
+				writeJSON(w, 400, map[string]string{"error": "robot_photo is too large"})
+				return
+			}
+		}
+
+		res, err := db.Exec(`UPDATE teams SET robot_photo=? WHERE team_key=?`, in.RobotPhoto, key)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			writeJSON(w, 404, map[string]string{"error": "team not found"})
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"ok":          true,
+			"team_key":    key,
+			"robot_photo": in.RobotPhoto,
+		})
 	}
 }
 

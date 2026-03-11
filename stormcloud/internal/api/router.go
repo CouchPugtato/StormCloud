@@ -74,6 +74,7 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 		r.Get("/teams", TeamsSearch(db))
 		r.Post("/teams/add-from-tba", TeamAddFromTBA(db, syncService))
 		r.Get("/teams/{team_key}", TeamGet(db))
+		r.Put("/teams/{team_key}/photo", TeamPhotoUpdate(db))
 		r.Get("/teams/{team_key}/schedule", TeamSchedule(db))
 		r.Get("/teams/{team_key}/notes", TeamNotesGet(db))
 		r.Put("/teams/{team_key}/notes", TeamNotesUpdate(db))

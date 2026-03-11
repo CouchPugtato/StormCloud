@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,6 +43,7 @@ export default function HomeScreen({ navigation }) {
   const [winProbabilities, setWinProbabilities] = useState({});
   const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
   const [currentMatches, setCurrentMatches] = useState([]);
+  const [teamDetailsMap, setTeamDetailsMap] = useState({});
 
   const fetchEvents = async () => {
     try {
@@ -81,6 +83,7 @@ export default function HomeScreen({ navigation }) {
       setCurrentMatches([]);
       setEpaData({});
       setWinProbabilities({});
+      setTeamDetailsMap({});
       return;
     }
 
@@ -89,6 +92,7 @@ export default function HomeScreen({ navigation }) {
       setCurrentMatches([]);
       setEpaData({});
       setWinProbabilities({});
+      setTeamDetailsMap({});
       const matchesData = await apiService.getEventMatches(eventKey);
 
       const getCompLevelRank = (level) => {
@@ -184,6 +188,8 @@ export default function HomeScreen({ navigation }) {
       });
 
       const teamKeysArray = Array.from(allTeamKeys);
+      const teamDetails = await apiService.getTeamsDetails(teamKeysArray);
+      setTeamDetailsMap(teamDetails);
       const epaResults = await apiService.getTeamsEPA(teamKeysArray);
       setEpaData(epaResults);
 
@@ -383,6 +389,13 @@ export default function HomeScreen({ navigation }) {
                     return (
                       <View key={index} style={styles.teamEpaRow}>
                         <TouchableOpacity onPress={() => navigateToScoutingForm(team, item)}>
+                          {teamDetailsMap[`frc${team}`]?.robot_photo ? (
+                            <Image
+                              source={{ uri: teamDetailsMap[`frc${team}`].robot_photo }}
+                              style={styles.matchTeamPhoto}
+                              resizeMode="cover"
+                            />
+                          ) : null}
                           <Text style={[styles.teamEpaNumber, styles.clickableTeamEpaNumber, { color: '#FFFFFF' }]}>
                             {team}
                           </Text>
@@ -422,6 +435,13 @@ export default function HomeScreen({ navigation }) {
                     return (
                       <View key={index} style={styles.teamEpaRow}>
                         <TouchableOpacity onPress={() => navigateToScoutingForm(team, item)}>
+                          {teamDetailsMap[`frc${team}`]?.robot_photo ? (
+                            <Image
+                              source={{ uri: teamDetailsMap[`frc${team}`].robot_photo }}
+                              style={styles.matchTeamPhoto}
+                              resizeMode="cover"
+                            />
+                          ) : null}
                           <Text style={[styles.teamEpaNumber, styles.clickableTeamEpaNumber, { color: '#FFFFFF' }]}>
                             {team}
                           </Text>
@@ -1025,6 +1045,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     paddingHorizontal: 4,
+  },
+  matchTeamPhoto: {
+    width: 52,
+    height: 40,
+    borderRadius: 8,
+    marginBottom: 6,
   },
   teamEpaNumber: {
     fontSize: 14,

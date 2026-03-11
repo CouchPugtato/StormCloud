@@ -57,6 +57,13 @@ class ApiService {
     return this.request(`/teams/${teamKey}`);
   }
 
+  async updateTeamPhoto(teamKey, robotPhoto) {
+    return this.request(`/teams/${teamKey}/photo`, {
+      method: 'PUT',
+      body: JSON.stringify({ robot_photo: robotPhoto }),
+    });
+  }
+
   async getTeamSchedule(teamKey, eventKey) {
     return this.request(`/teams/${teamKey}/schedule?event=${eventKey}`);
   }
@@ -137,11 +144,27 @@ class ApiService {
 
   async getAllTeams() {
     try {
-      return await this.request('/teams?limit=100');
+      return await this.request('/teams?limit=1000');
     } catch (error) {
       console.error('Failed to fetch teams:', error);
       return [];
     }
+  }
+
+  async getTeamsDetails(teamKeys = []) {
+    const uniqueKeys = Array.from(new Set((teamKeys || []).filter(Boolean)));
+    const results = await Promise.all(
+      uniqueKeys.map(async (teamKey) => {
+        try {
+          const team = await this.getTeam(teamKey);
+          return [teamKey, team];
+        } catch (error) {
+          return [teamKey, null];
+        }
+      })
+    );
+
+    return Object.fromEntries(results.filter(([, team]) => team));
   }
 
   async addTeamFromTBA(teamNum) {

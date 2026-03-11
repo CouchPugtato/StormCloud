@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,14 @@ import {
   Image,
   ActivityIndicator,
   Platform,
+  Alert,
+  Modal,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 import apiService from '../utils/apiService';
 import PerformanceGraphs from '../components/PerformanceGraphs';
 
@@ -21,6 +25,7 @@ const { width } = Dimensions.get('window');
 
 export default function TeamDetailScreen({ navigation, route }) {
   const { theme } = useTheme();
+  const { user } = useAuth();
   const { team } = route.params || {};
   
   const [teamData, setTeamData] = useState(team || null);
@@ -58,6 +63,13 @@ export default function TeamDetailScreen({ navigation, route }) {
   const [savingScoutingNotes, setSavingScoutingNotes] = useState(false);
   const [pitNotesSaved, setPitNotesSaved] = useState(false);
   const [scoutingNotesSaved, setScoutingNotesSaved] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [robotPhotoAspectRatio, setRobotPhotoAspectRatio] = useState(4 / 3);
+  const [showWebCameraModal, setShowWebCameraModal] = useState(false);
+  const [webCameraError, setWebCameraError] = useState('');
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const webStreamRef = useRef(null);
 
   useEffect(() => {
     const fetchTeamDetails = async () => {
@@ -129,6 +141,25 @@ export default function TeamDetailScreen({ navigation, route }) {
     fetchTeamDetails();
   }, [team]);
 
+  useEffect(() => {
+    if (!teamData?.robot_photo) {
+      setRobotPhotoAspectRatio(4 / 3);
+      return;
+    }
+
+    Image.getSize(
+      teamData.robot_photo,
+      (width, height) => {
+        if (width > 0 && height > 0) {
+          setRobotPhotoAspectRatio(width / height);
+        }
+      },
+      () => {
+        setRobotPhotoAspectRatio(4 / 3);
+      }
+    );
+  }, [teamData?.robot_photo]);
+
   const savePitNotes = async () => {
     if (!teamData?.team_key) return;
     
@@ -190,6 +221,132 @@ export default function TeamDetailScreen({ navigation, route }) {
     }
   };
 
+  const canEditPhoto = !!user && user.role !== USER_ROLES.VIEWER;
+
+  const stopWebCameraStream = () => {
+    if (webStreamRef.current) {
+      webStreamRef.current.getTracks().forEach((track) => track.stop());
+      webStreamRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !showWebCameraModal) {
+      stopWebCameraStream();
+      return undefined;
+    }
+
+    let cancelled = false;
+    const startCamera = async () => {
+      try {
+        setWebCameraError('');
+        if (!navigator?.mediaDevices?.getUserMedia) {
+          throw new Error('Camera access is not supported in this browser.');
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        webStreamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+      } catch (error) {
+        setWebCameraError(error.message || 'Unable to access the camera.');
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      cancelled = true;
+      stopWebCameraStream();
+    };
+  }, [showWebCameraModal]);
+
+  const captureWebCameraPhoto = async () => {
+    if (!videoRef.current || !canvasRef.current || !teamData?.team_key || photoBusy) {
+      return;
+    }
+
+    try {
+      setPhotoBusy(true);
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const width = video.videoWidth || 1280;
+      const height = video.videoHeight || 720;
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      context.drawImage(video, 0, 0, width, height);
+      const robotPhoto = canvas.toDataURL('image/jpeg', 0.8);
+      await apiService.updateTeamPhoto(teamData.team_key, robotPhoto);
+      setTeamData((prev) => ({ ...prev, robot_photo: robotPhoto }));
+      setShowWebCameraModal(false);
+      stopWebCameraStream();
+    } catch (error) {
+      Alert.alert('Photo Error', error.message || 'Unable to capture robot photo.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handleRetakeRobotPhoto = async () => {
+    if (!teamData?.team_key || photoBusy || !canEditPhoto) {
+      return;
+    }
+
+    try {
+      setPhotoBusy(true);
+      let result = null;
+
+      if (Platform.OS !== 'web') {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('Camera Required', 'Camera access is required to take a robot photo.');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.5,
+          aspect: [4, 3],
+          base64: true,
+        });
+      } else {
+        setShowWebCameraModal(true);
+        return;
+      }
+
+      if (result?.canceled || !result?.assets?.length) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        Alert.alert('Photo Error', 'Unable to read the selected image.');
+        return;
+      }
+
+      const mimeType = asset.mimeType || 'image/jpeg';
+      const robotPhoto = `data:${mimeType};base64,${asset.base64}`;
+      await apiService.updateTeamPhoto(teamData.team_key, robotPhoto);
+      setTeamData((prev) => ({ ...prev, robot_photo: robotPhoto }));
+    } catch (error) {
+      Alert.alert('Photo Error', error.message || 'Unable to save robot photo.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
@@ -234,6 +391,65 @@ export default function TeamDetailScreen({ navigation, route }) {
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar style={theme.colors.statusBar} />
+      {Platform.OS === 'web' ? (
+        <Modal
+          transparent
+          visible={showWebCameraModal}
+          animationType="fade"
+          onRequestClose={() => {
+            setShowWebCameraModal(false);
+            stopWebCameraStream();
+          }}
+        >
+          <View style={styles.webCameraBackdrop}>
+            <View style={[styles.webCameraModal, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              <Text style={[styles.webCameraTitle, { color: theme.colors.text }]}>Capture Robot Photo</Text>
+              <Text style={[styles.webCameraSubtitle, { color: theme.colors.textSecondary }]}>
+                Take a fresh robot photo from the camera.
+              </Text>
+              {webCameraError ? (
+                <Text style={styles.webCameraError}>{webCameraError}</Text>
+              ) : (
+                <View style={styles.webCameraPreviewWrap}>
+                  {React.createElement('video', {
+                    ref: videoRef,
+                    autoPlay: true,
+                    playsInline: true,
+                    muted: true,
+                    style: {
+                      width: '100%',
+                      borderRadius: '12px',
+                      backgroundColor: '#000',
+                    },
+                  })}
+                  {React.createElement('canvas', {
+                    ref: canvasRef,
+                    style: { display: 'none' },
+                  })}
+                </View>
+              )}
+              <View style={styles.webCameraActions}>
+                <TouchableOpacity
+                  style={[styles.webCameraButtonSecondary, { borderColor: theme.colors.border }]}
+                  onPress={() => {
+                    setShowWebCameraModal(false);
+                    stopWebCameraStream();
+                  }}
+                >
+                  <Text style={[styles.webCameraButtonSecondaryText, { color: theme.colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.webCameraButtonPrimary, { backgroundColor: theme.colors.primary }, (photoBusy || !!webCameraError) && styles.photoActionButtonDisabled]}
+                  onPress={captureWebCameraPhoto}
+                  disabled={photoBusy || !!webCameraError}
+                >
+                  <Text style={styles.photoActionButtonText}>{photoBusy ? 'Saving...' : 'Take Photo'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
       
       <ScrollView 
         style={styles.content}
@@ -263,8 +479,34 @@ export default function TeamDetailScreen({ navigation, route }) {
                 <Ionicons name="location-outline" size={16} color={theme.colors.textSecondary} />
                 {` ${teamLocation}`}
               </Text>
-
             </View>
+          </View>
+        </View>
+
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Robot Photo</Text>
+          <View style={styles.robotPhotoSection}>
+            {teamData.robot_photo ? (
+              <View style={[styles.robotPhotoFrame, { aspectRatio: robotPhotoAspectRatio, backgroundColor: theme.colors.background }]}>
+                <Image source={{ uri: teamData.robot_photo }} style={styles.robotPhoto} resizeMode="contain" />
+              </View>
+            ) : (
+              <View style={[styles.robotPhotoPlaceholder, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
+                <Ionicons name="image-outline" size={34} color={theme.colors.textSecondary} />
+                <Text style={[styles.robotPhotoPlaceholderText, { color: theme.colors.textSecondary }]}>No robot photo yet</Text>
+              </View>
+            )}
+            {canEditPhoto ? (
+              <TouchableOpacity
+                style={[styles.photoActionButton, { backgroundColor: theme.colors.primary }, photoBusy && styles.photoActionButtonDisabled]}
+                onPress={handleRetakeRobotPhoto}
+                disabled={photoBusy}
+              >
+                <Text style={styles.photoActionButtonText}>
+                  {photoBusy ? 'Saving...' : teamData.robot_photo ? 'Retake Robot Photo' : 'Take Robot Photo'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 
@@ -849,9 +1091,111 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-  teamHeader: {
-    flexDirection: 'row',
+  robotPhotoSection: {
+    marginTop: 18,
+    marginBottom: 18,
     alignItems: 'center',
+  },
+  robotPhotoFrame: {
+    width: '100%',
+    maxWidth: 420,
+    maxHeight: 320,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+    alignSelf: 'center',
+  },
+  robotPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  robotPhotoPlaceholder: {
+    height: 220,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  robotPhotoPlaceholderText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  photoActionButton: {
+    borderRadius: 10,
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
+  photoActionButtonDisabled: {
+    opacity: 0.6,
+  },
+  photoActionButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  webCameraBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  webCameraModal: {
+    width: '100%',
+    maxWidth: 640,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 18,
+  },
+  webCameraTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  webCameraSubtitle: {
+    fontSize: 13,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  webCameraPreviewWrap: {
+    width: '100%',
+    overflow: 'hidden',
+    borderRadius: 12,
+  },
+  webCameraError: {
+    color: '#dc2626',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  webCameraActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 14,
+  },
+  webCameraButtonPrimary: {
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  webCameraButtonSecondary: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  webCameraButtonSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  teamHeader: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
   },
   teamIcon: {
     width: 60,
@@ -859,7 +1203,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginBottom: 12,
   },
   teamIconText: {
     color: 'white',
