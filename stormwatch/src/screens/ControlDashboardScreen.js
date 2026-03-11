@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -32,7 +32,22 @@ export default function ControlDashboardScreen() {
   const [scheduleMatches, setScheduleMatches] = useState([]);
   const [scheduleAssignments, setScheduleAssignments] = useState({});
   const [scheduleSearchQueries, setScheduleSearchQueries] = useState({});
+  const [scheduleGridLayouts, setScheduleGridLayouts] = useState({});
+  const [scheduleSlotLayouts, setScheduleSlotLayouts] = useState({});
+  const [bulkScheduleForm, setBulkScheduleForm] = useState({
+    assignments: {},
+    queries: {},
+    start_match: '',
+    end_match: '',
+  });
+  const [activeBulkSlotKey, setActiveBulkSlotKey] = useState('');
+  const [bulkGridLayout, setBulkGridLayout] = useState(null);
+  const [bulkSlotLayouts, setBulkSlotLayouts] = useState({});
+  const [bulkScheduleSaving, setBulkScheduleSaving] = useState(false);
+  const [bulkScheduleStatus, setBulkScheduleStatus] = useState(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
+  const scheduleBlurTimeoutRef = useRef(null);
+  const bulkBlurTimeoutRef = useRef(null);
   const [savingScheduleKey, setSavingScheduleKey] = useState('');
   const [openScheduleDropdownKey, setOpenScheduleDropdownKey] = useState('');
   const [twitchUrl, setTwitchUrl] = useState('');
@@ -294,6 +309,387 @@ export default function ControlDashboardScreen() {
       .slice(0, 8);
   };
 
+  const getBulkScheduleSuggestions = (slotKey) => {
+    const query = String(bulkScheduleForm.queries?.[slotKey] || '').trim().toLowerCase();
+    if (!query) {
+      return scouterAccounts.slice(0, 8);
+    }
+
+    return scouterAccounts
+      .filter((account) => {
+        const displayName = getAccountDisplayName(account).toLowerCase();
+        const email = String(account.email || '').toLowerCase();
+        return displayName.includes(query) || email.includes(query);
+      })
+      .slice(0, 8);
+  };
+
+  const resetBulkScheduleForm = () => {
+    setBulkScheduleForm({
+      assignments: {},
+      queries: {},
+      start_match: '',
+      end_match: '',
+    });
+    setActiveBulkSlotKey('');
+    setBulkGridLayout(null);
+    setBulkScheduleStatus(null);
+  };
+
+  const handleBulkScheduleApply = async () => {
+    if (bulkScheduleSaving || !scheduleEventKey) {
+      return;
+    }
+
+    setBulkScheduleStatus(null);
+    const startMatch = Number.parseInt(String(bulkScheduleForm.start_match).trim(), 10);
+    const endMatch = Number.parseInt(String(bulkScheduleForm.end_match).trim(), 10);
+    const validMatchNumbers = new Set(
+      scheduleMatches.map((match) => Number.parseInt(String(match.match_number || 0), 10)).filter(Number.isFinite)
+    );
+    const filledSlots = scheduleSlotOptions
+      .map((slot) => ({
+        slot_key: slot.key,
+        user_id: bulkScheduleForm.assignments?.[slot.key] || '',
+      }))
+      .filter((item) => item.user_id);
+
+    if (filledSlots.length === 0) {
+      setBulkScheduleStatus({ type: 'error', message: 'Assign at least one slot before applying.' });
+      return;
+    }
+
+    if (!Number.isFinite(startMatch) || !Number.isFinite(endMatch)) {
+      setBulkScheduleStatus({ type: 'error', message: 'Enter valid start and end match numbers.' });
+      return;
+    }
+
+    if (startMatch > endMatch) {
+      setBulkScheduleStatus({ type: 'error', message: 'Start match must be before end match.' });
+      return;
+    }
+
+    if (!validMatchNumbers.has(startMatch) || !validMatchNumbers.has(endMatch)) {
+      setBulkScheduleStatus({ type: 'error', message: 'Start and end matches must exist in this event.' });
+      return;
+    }
+
+    const targetMatches = scheduleMatches.filter((match) => {
+      const matchNumber = Number.parseInt(String(match.match_number || 0), 10);
+      return matchNumber >= startMatch && matchNumber <= endMatch;
+    });
+
+    if (targetMatches.length === 0) {
+      setBulkScheduleStatus({ type: 'error', message: 'No qualification matches were found in that range.' });
+      return;
+    }
+
+    const previousAssignments = { ...scheduleAssignments };
+    const previousQueries = { ...scheduleSearchQueries };
+    const optimisticQueries = { ...scheduleSearchQueries };
+    const optimisticAssignments = { ...scheduleAssignments };
+
+    targetMatches.forEach((match) => {
+      filledSlots.forEach((item) => {
+        optimisticAssignments[`${match.match_key}:${item.slot_key}`] = item.user_id;
+        const account = scouterAccounts.find((entry) => entry.id === item.user_id);
+        optimisticQueries[`${match.match_key}:${item.slot_key}`] = account ? getAccountDisplayName(account) : '';
+      });
+    });
+
+    setScheduleAssignments(optimisticAssignments);
+    setScheduleSearchQueries(optimisticQueries);
+    setBulkScheduleSaving(true);
+    try {
+      for (const match of targetMatches) {
+        for (const item of filledSlots) {
+          await apiService.saveScoutingScheduleAssignment({
+            event_key: scheduleEventKey,
+            match_key: match.match_key,
+            slot_key: item.slot_key,
+            user_id: item.user_id,
+          });
+        }
+      }
+
+      setBulkScheduleForm({
+        assignments: {},
+        queries: {},
+        start_match: '',
+        end_match: '',
+      });
+      setBulkScheduleStatus({
+        type: 'success',
+        message: `Applied assignments to qualification matches ${startMatch}-${endMatch}.`,
+      });
+      setActiveBulkSlotKey('');
+    } catch (error) {
+      setScheduleAssignments(previousAssignments);
+      setScheduleSearchQueries(previousQueries);
+      setBulkScheduleStatus({
+        type: 'error',
+        message: error.message || 'Unable to apply bulk scheduling.',
+      });
+    } finally {
+      setBulkScheduleSaving(false);
+    }
+  };
+
+  const renderBulkScheduleCard = () => {
+    if (scheduleLoading || scheduleMatches.length === 0) {
+      return null;
+    }
+    const activeBulkSuggestions = activeBulkSlotKey ? getBulkScheduleSuggestions(activeBulkSlotKey) : [];
+    const activeBulkLayout = activeBulkSlotKey ? bulkSlotLayouts[activeBulkSlotKey] : null;
+
+    return (
+      <View style={[styles.bulkScheduleCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.bulkScheduleTitle, { color: theme.colors.text }]}>Bulk Scheduling</Text>
+        <Text style={[styles.bulkScheduleSubtitle, { color: theme.colors.textSecondary }]}>
+          Fill any slots you want, then apply them across a qualification match range.
+        </Text>
+
+        <View
+          style={styles.scheduleSlotsGrid}
+          onLayout={(event) => {
+            const { x, y, width, height } = event.nativeEvent.layout;
+            setBulkGridLayout({ x, y, width, height });
+          }}
+        >
+          {scheduleSlotOptions.map((slot) => (
+            (() => {
+              const isOpen = activeBulkSlotKey === slot.key;
+              const selectedUserID = bulkScheduleForm.assignments?.[slot.key] || '';
+              const selectedScouter = scouterAccounts.find((account) => account.id === selectedUserID);
+              const inputValue =
+                bulkScheduleForm.queries?.[slot.key] ??
+                (selectedScouter ? getAccountDisplayName(selectedScouter) : '');
+
+              return (
+                <View
+                  key={`bulk-${slot.key}`}
+                  style={[
+                    styles.scheduleSlotCard,
+                    isOpen && styles.scheduleSlotCardOpen,
+                    Platform.OS === 'web' ? styles.scheduleSlotCardWeb : styles.scheduleSlotCardMobile,
+                  ]}
+                  onLayout={(event) => {
+                    const { x, y, width, height } = event.nativeEvent.layout;
+                    setBulkSlotLayouts((prev) => ({ ...prev, [slot.key]: { x, y, width, height } }));
+                  }}
+                >
+                  <Text style={[styles.scheduleSlotLabel, { color: theme.colors.textSecondary }]}>
+                    {slot.label}
+                  </Text>
+                  <View>
+                    <TextInput
+                      style={[
+                        styles.scheduleSearchInput,
+                        {
+                          borderColor: theme.colors.border,
+                          backgroundColor: theme.colors.background,
+                          color: theme.colors.text,
+                        },
+                        isOpen && { borderColor: theme.colors.primary },
+                      ]}
+                      value={bulkScheduleSaving ? 'Applying...' : inputValue}
+                      onFocus={() => {
+                        if (bulkBlurTimeoutRef.current) {
+                          clearTimeout(bulkBlurTimeoutRef.current);
+                          bulkBlurTimeoutRef.current = null;
+                        }
+                        setActiveBulkSlotKey(slot.key);
+                      }}
+                      onBlur={() => {
+                        bulkBlurTimeoutRef.current = setTimeout(() => {
+                          setActiveBulkSlotKey((current) => (current === slot.key ? '' : current));
+                          bulkBlurTimeoutRef.current = null;
+                        }, 120);
+                      }}
+                      onChangeText={(text) => {
+                        setBulkScheduleStatus(null);
+                        setBulkScheduleForm((prev) => ({
+                          ...prev,
+                          queries: { ...(prev.queries || {}), [slot.key]: text },
+                          assignments: { ...(prev.assignments || {}), [slot.key]: '' },
+                        }));
+                      }}
+                      placeholder="Search member"
+                      placeholderTextColor={theme.colors.textSecondary}
+                      autoCorrect={false}
+                      autoCapitalize="words"
+                      editable={!bulkScheduleSaving}
+                    />
+                  </View>
+                </View>
+              );
+            })()
+          ))}
+        </View>
+
+        {activeBulkSlotKey && activeBulkLayout && bulkGridLayout ? (
+          <View
+            style={[
+              styles.bulkOverlayMenu,
+              {
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surface,
+                left: bulkGridLayout.x + activeBulkLayout.x,
+                top: bulkGridLayout.y + activeBulkLayout.y + activeBulkLayout.height + 6,
+                width: activeBulkLayout.width,
+                shadowColor: '#000',
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={[
+                styles.scheduleDropdownOption,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderBottomColor: theme.colors.borderLight,
+                },
+              ]}
+              onPress={() => {
+                setBulkScheduleStatus(null);
+                setBulkScheduleForm((prev) => ({
+                  ...prev,
+                  assignments: { ...(prev.assignments || {}), [activeBulkSlotKey]: '' },
+                  queries: { ...(prev.queries || {}), [activeBulkSlotKey]: '' },
+                }));
+                setActiveBulkSlotKey('');
+              }}
+            >
+              <Text style={[styles.scheduleDropdownOptionText, { color: theme.colors.textSecondary }]}>
+                Unassigned
+              </Text>
+            </TouchableOpacity>
+            {activeBulkSuggestions.map((account) => {
+              const selectedUserID = bulkScheduleForm.assignments?.[activeBulkSlotKey] || '';
+              return (
+                <TouchableOpacity
+                  key={`bulk-panel-${activeBulkSlotKey}-${account.id}`}
+                  style={[
+                    styles.scheduleDropdownOption,
+                    {
+                      backgroundColor:
+                        account.id === selectedUserID ? `${theme.colors.primary}22` : theme.colors.surface,
+                      borderBottomColor: theme.colors.borderLight,
+                    },
+                  ]}
+                  onPress={() => {
+                    setBulkScheduleStatus(null);
+                    setBulkScheduleForm((prev) => ({
+                      ...prev,
+                      assignments: { ...(prev.assignments || {}), [activeBulkSlotKey]: account.id },
+                      queries: { ...(prev.queries || {}), [activeBulkSlotKey]: getAccountDisplayName(account) },
+                    }));
+                    setActiveBulkSlotKey('');
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.scheduleDropdownOptionText,
+                      {
+                        color:
+                          account.id === selectedUserID ? theme.colors.primary : theme.colors.text,
+                      },
+                    ]}
+                  >
+                    {getAccountDisplayName(account)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
+
+        <View style={styles.scheduleSlotsGrid}>
+          <View
+            style={[
+              styles.scheduleSlotCard,
+              Platform.OS === 'web' ? styles.scheduleSlotCardWeb : styles.scheduleSlotCardMobile,
+            ]}
+          >
+            <Text style={[styles.scheduleSlotLabel, { color: theme.colors.textSecondary }]}>Start Match</Text>
+            <TextInput
+              style={[
+                styles.scheduleSearchInput,
+                { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text },
+              ]}
+              value={bulkScheduleForm.start_match}
+              onChangeText={(text) => {
+                setBulkScheduleStatus(null);
+                setBulkScheduleForm((prev) => ({ ...prev, start_match: text.replace(/[^0-9]/g, '') }));
+              }}
+              placeholder="Qual number"
+              placeholderTextColor={theme.colors.textSecondary}
+              keyboardType="numeric"
+            />
+          </View>
+
+          <View
+            style={[
+              styles.scheduleSlotCard,
+              Platform.OS === 'web' ? styles.scheduleSlotCardWeb : styles.scheduleSlotCardMobile,
+            ]}
+          >
+            <Text style={[styles.scheduleSlotLabel, { color: theme.colors.textSecondary }]}>End Match</Text>
+            <TextInput
+              style={[
+                styles.scheduleSearchInput,
+                { backgroundColor: theme.colors.background, borderColor: theme.colors.border, color: theme.colors.text },
+              ]}
+              value={bulkScheduleForm.end_match}
+              onChangeText={(text) => {
+                setBulkScheduleStatus(null);
+                setBulkScheduleForm((prev) => ({ ...prev, end_match: text.replace(/[^0-9]/g, '') }));
+              }}
+              placeholder="Qual number"
+              placeholderTextColor={theme.colors.textSecondary}
+              keyboardType="numeric"
+            />
+          </View>
+        </View>
+
+        <Text style={[styles.sectionNote, styles.leftAlignedNote, { color: theme.colors.textSecondary }]}>
+          Only qualification match numbers already loaded for this event can be used.
+        </Text>
+
+        {bulkScheduleStatus ? (
+          <View
+            style={[
+              styles.inlineStatus,
+              bulkScheduleStatus.type === 'error' && styles.inlineStatusError,
+              bulkScheduleStatus.type === 'success' && styles.inlineStatusSuccess,
+            ]}
+          >
+            <Text
+              style={[
+                styles.inlineStatusText,
+                bulkScheduleStatus.type === 'error' && styles.inlineStatusTextError,
+                bulkScheduleStatus.type === 'success' && styles.inlineStatusTextSuccess,
+              ]}
+            >
+              {bulkScheduleStatus.message}
+            </Text>
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          style={[
+            styles.modalPrimaryButton,
+            { backgroundColor: theme.colors.primary },
+            bulkScheduleSaving && styles.disabledButton,
+          ]}
+          onPress={handleBulkScheduleApply}
+          disabled={bulkScheduleSaving}
+        >
+          <Text style={styles.modalPrimaryButtonText}>{bulkScheduleSaving ? 'Applying...' : 'Apply Range'}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const renderScheduleEventDetail = () => {
     if (scheduleLoading) {
       return (
@@ -311,11 +707,28 @@ export default function ControlDashboardScreen() {
       );
     }
 
-    return scheduleMatches.map((match) => (
-      <View
-        key={match.match_key}
-        style={[styles.scheduleMatchCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
-      >
+    return (
+      <>
+        {renderBulkScheduleCard()}
+        {scheduleMatches.map((match) => (
+          (() => {
+            const activeMatchSlotKey = openScheduleDropdownKey.startsWith(`${match.match_key}:`)
+              ? openScheduleDropdownKey
+              : '';
+            const activeMatchAssignmentKey = activeMatchSlotKey;
+            const activeMatchSuggestions = activeMatchAssignmentKey ? getScheduleSuggestions(activeMatchAssignmentKey) : [];
+            const activeMatchSlotLayout = activeMatchAssignmentKey ? scheduleSlotLayouts[activeMatchAssignmentKey] : null;
+            const activeMatchGridLayout = scheduleGridLayouts[match.match_key] || null;
+
+            return (
+              <View
+                key={match.match_key}
+                style={[
+                  styles.scheduleMatchCard,
+                  activeMatchAssignmentKey && styles.scheduleMatchCardActive,
+                  { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                ]}
+              >
         <View style={styles.scheduleMatchHeader}>
           <View style={styles.scheduleMatchHeaderText}>
             <Text style={[styles.scheduleMatchTitle, { color: theme.colors.text }]}>
@@ -327,12 +740,18 @@ export default function ControlDashboardScreen() {
           </View>
         </View>
 
-        <View style={styles.scheduleSlotsGrid}>
+        <View
+          style={styles.scheduleSlotsGrid}
+          onLayout={(event) => {
+            const { x, y, width, height } = event.nativeEvent.layout;
+            setScheduleGridLayouts((prev) => ({ ...prev, [match.match_key]: { x, y, width, height } }));
+          }}
+        >
           {scheduleSlotOptions.map((slot) => {
             const assignmentKey = `${match.match_key}:${slot.key}`;
             const selectedUserID = scheduleAssignments[assignmentKey] || '';
             const selectedScouter = scouterAccounts.find((account) => account.id === selectedUserID);
-            const isOpen = openScheduleDropdownKey === assignmentKey;
+            const isOpen = activeMatchAssignmentKey === assignmentKey;
             const isSaving = savingScheduleKey === assignmentKey;
             const inputValue =
               scheduleSearchQueries[assignmentKey] ??
@@ -347,6 +766,10 @@ export default function ControlDashboardScreen() {
                   isOpen && styles.scheduleSlotCardOpen,
                   Platform.OS === 'web' ? styles.scheduleSlotCardWeb : styles.scheduleSlotCardMobile,
                 ]}
+                onLayout={(event) => {
+                  const { x, y, width, height } = event.nativeEvent.layout;
+                  setScheduleSlotLayouts((prev) => ({ ...prev, [assignmentKey]: { x, y, width, height } }));
+                }}
               >
                 <Text style={[styles.scheduleSlotLabel, { color: theme.colors.textSecondary }]}>
                   {getScheduleSlotLabel(match, slot.key)}
@@ -362,7 +785,19 @@ export default function ControlDashboardScreen() {
                     isOpen && { borderColor: theme.colors.primary },
                   ]}
                   value={isSaving ? 'Saving...' : inputValue}
-                  onFocus={() => setOpenScheduleDropdownKey(assignmentKey)}
+                  onFocus={() => {
+                    if (scheduleBlurTimeoutRef.current) {
+                      clearTimeout(scheduleBlurTimeoutRef.current);
+                      scheduleBlurTimeoutRef.current = null;
+                    }
+                    setOpenScheduleDropdownKey(assignmentKey);
+                  }}
+                  onBlur={() => {
+                    scheduleBlurTimeoutRef.current = setTimeout(() => {
+                      setOpenScheduleDropdownKey((current) => (current === assignmentKey ? '' : current));
+                      scheduleBlurTimeoutRef.current = null;
+                    }, 120);
+                  }}
                   onChangeText={(text) => {
                     setScheduleSearchQueries((prev) => ({ ...prev, [assignmentKey]: text }));
                     setOpenScheduleDropdownKey(assignmentKey);
@@ -373,63 +808,83 @@ export default function ControlDashboardScreen() {
                   autoCapitalize="words"
                   editable={!isSaving}
                 />
-                {isOpen ? (
-                  <View
-                    style={[
-                      styles.scheduleDropdownMenu,
-                      {
-                        borderColor: theme.colors.border,
-                        backgroundColor: theme.colors.surface,
-                        shadowColor: '#000',
-                      },
-                    ]}
-                  >
-                    <TouchableOpacity
-                      style={[
-                        styles.scheduleDropdownOption,
-                        {
-                          backgroundColor: theme.colors.surface,
-                          borderBottomColor: theme.colors.borderLight,
-                        },
-                      ]}
-                      onPress={() => handleScheduleAssignmentChange(scheduleEventKey, match.match_key, slot.key, '')}
-                    >
-                      <Text style={[styles.scheduleDropdownOptionText, { color: theme.colors.textSecondary }]}>
-                        Unassigned
-                      </Text>
-                    </TouchableOpacity>
-                    {suggestions.map((account) => (
-                      <TouchableOpacity
-                        key={`${assignmentKey}-${account.id}`}
-                        style={[
-                          styles.scheduleDropdownOption,
-                          {
-                            backgroundColor:
-                              account.id === selectedUserID ? `${theme.colors.primary}22` : theme.colors.surface,
-                            borderBottomColor: theme.colors.borderLight,
-                          },
-                        ]}
-                        onPress={() => handleScheduleAssignmentChange(scheduleEventKey, match.match_key, slot.key, account.id)}
-                      >
-                        <Text
-                          style={[
-                            styles.scheduleDropdownOptionText,
-                            { color: account.id === selectedUserID ? theme.colors.primary : theme.colors.text },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {getAccountDisplayName(account)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : null}
               </View>
             );
           })}
         </View>
-      </View>
-    ));
+
+        {activeMatchAssignmentKey ? (
+          <View
+            style={[
+              styles.bulkOverlayMenu,
+              {
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surface,
+                left: activeMatchGridLayout && activeMatchSlotLayout ? activeMatchGridLayout.x + activeMatchSlotLayout.x : 12,
+                top:
+                  activeMatchGridLayout && activeMatchSlotLayout
+                    ? activeMatchGridLayout.y + activeMatchSlotLayout.y + activeMatchSlotLayout.height + 6
+                    : 88,
+                width: activeMatchSlotLayout ? activeMatchSlotLayout.width : undefined,
+                shadowColor: '#000',
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={[
+                styles.scheduleDropdownOption,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderBottomColor: theme.colors.borderLight,
+                },
+              ]}
+              onPress={() => {
+                const slotKey = activeMatchAssignmentKey.split(':')[1];
+                handleScheduleAssignmentChange(scheduleEventKey, match.match_key, slotKey, '');
+              }}
+            >
+              <Text style={[styles.scheduleDropdownOptionText, { color: theme.colors.textSecondary }]}>
+                Unassigned
+              </Text>
+            </TouchableOpacity>
+            {activeMatchSuggestions.map((account) => {
+              const selectedUserID = scheduleAssignments[activeMatchAssignmentKey] || '';
+              return (
+                <TouchableOpacity
+                  key={`${activeMatchAssignmentKey}-${account.id}`}
+                  style={[
+                    styles.scheduleDropdownOption,
+                    {
+                      backgroundColor:
+                        account.id === selectedUserID ? `${theme.colors.primary}22` : theme.colors.surface,
+                      borderBottomColor: theme.colors.borderLight,
+                    },
+                  ]}
+                  onPress={() => {
+                    const slotKey = activeMatchAssignmentKey.split(':')[1];
+                    handleScheduleAssignmentChange(scheduleEventKey, match.match_key, slotKey, account.id);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.scheduleDropdownOptionText,
+                      { color: account.id === selectedUserID ? theme.colors.primary : theme.colors.text },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {getAccountDisplayName(account)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
+              </View>
+            );
+          })()
+        ))}
+      </>
+    );
   };
 
   const handleSaveTwitchURL = async () => {
@@ -457,6 +912,9 @@ export default function ControlDashboardScreen() {
     if (!eventKey) {
       setScheduleMatches([]);
       setScheduleAssignments({});
+      setScheduleGridLayouts({});
+      setScheduleSlotLayouts({});
+      resetBulkScheduleForm();
       return;
     }
 
@@ -479,6 +937,9 @@ export default function ControlDashboardScreen() {
       setScheduleMatches(qualificationMatches);
       setScheduleAssignments(assignmentMap);
       setScheduleSearchQueries({});
+      setScheduleGridLayouts({});
+      setScheduleSlotLayouts({});
+      resetBulkScheduleForm();
     } catch (error) {
       Alert.alert('Error', error.message || 'Unable to load scouting schedule.');
     } finally {
@@ -517,6 +978,7 @@ export default function ControlDashboardScreen() {
   const openScheduleModal = (eventKey) => {
     setOpenScheduleDropdownKey('');
     setScheduleSearchQueries({});
+    resetBulkScheduleForm();
     setScheduleEventKey(eventKey);
     setShowScheduleModal(true);
   };
@@ -524,6 +986,7 @@ export default function ControlDashboardScreen() {
   const closeScheduleModal = () => {
     setOpenScheduleDropdownKey('');
     setScheduleSearchQueries({});
+    resetBulkScheduleForm();
     setScheduleEventKey('');
     setShowScheduleModal(false);
   };
@@ -1544,10 +2007,43 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     padding: 20,
+    overflow: 'visible',
   },
   scheduleModalHeaderText: {
     flex: 1,
     paddingRight: 12,
+  },
+  bulkScheduleCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    position: 'relative',
+    overflow: 'visible',
+    zIndex: 60,
+    elevation: 25,
+  },
+  bulkScheduleTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  bulkScheduleSubtitle: {
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  bulkOverlayMenu: {
+    position: 'absolute',
+    borderWidth: 1,
+    borderRadius: 10,
+    overflow: 'hidden',
+    zIndex: 5000,
+    elevation: 100,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    maxHeight: 220,
   },
   inlineSectionHeader: {
     flexDirection: 'row',
@@ -1870,6 +2366,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
     overflow: 'visible',
   },
+  scheduleMatchCardActive: {
+    zIndex: 3000,
+    elevation: 80,
+  },
   scheduleMatchHeader: {
     marginBottom: 12,
   },
@@ -1905,6 +2405,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+    overflow: 'visible',
+    zIndex: 1,
   },
   scheduleSlotCard: {
     position: 'relative',
@@ -1944,13 +2446,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
     overflow: 'hidden',
-    zIndex: 5,
+    zIndex: 500,
     maxHeight: 220,
-    elevation: 10,
+    elevation: 40,
     shadowOpacity: 0.2,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
     opacity: 1,
+  },
+  scheduleDropdownMenuUp: {
+    top: 'auto',
+    bottom: 58,
   },
   scheduleDropdownOption: {
     paddingHorizontal: 10,
