@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,8 @@ export default function ControlDashboardScreen() {
   const { isEventMode, toggleEventMode } = useEventMode();
   const [allAccounts, setAllAccounts] = useState([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountSearchQuery, setAccountSearchQuery] = useState('');
+  const [openAccountDropdownID, setOpenAccountDropdownID] = useState('');
   const [twitchUrl, setTwitchUrl] = useState('');
   const [twitchUrlDraft, setTwitchUrlDraft] = useState('');
   const [savingTwitchUrl, setSavingTwitchUrl] = useState(false);
@@ -76,11 +78,24 @@ export default function ControlDashboardScreen() {
   });
 
   const upgradableRoleOptions = [
+    { key: USER_ROLES.VIEWER, label: 'Viewer' },
     { key: USER_ROLES.SCOUTER, label: 'Scouter' },
     { key: USER_ROLES.DRIVE_TEAM, label: 'Drive Team' },
     { key: USER_ROLES.SCOUTING_LEAD, label: 'Scouting Lead' },
   ];
+  const accountRoleSections = [
+    { key: USER_ROLES.SCOUTING_LEAD, label: 'Scouting Leads' },
+    { key: USER_ROLES.DRIVE_TEAM, label: 'Drive Team' },
+    { key: USER_ROLES.SCOUTER, label: 'Scouters' },
+    { key: USER_ROLES.VIEWER, label: 'Viewers' },
+  ];
   const isScoutingLead = user?.role === USER_ROLES.SCOUTING_LEAD;
+
+  const getAccountDisplayName = (account) =>
+    [account.first_name, account.last_name].filter(Boolean).join(' ') || account.name || account.email || account.id;
+
+  const getRoleLabel = (roleKey) =>
+    upgradableRoleOptions.find((option) => option.key === roleKey)?.label || 'Viewer';
 
   useEffect(() => {
     const loadAccounts = async () => {
@@ -148,11 +163,32 @@ export default function ControlDashboardScreen() {
       setAllAccounts((prev) =>
         prev.map((account) => (account.id === targetUserID ? { ...account, role: targetRole } : account))
       );
+      setOpenAccountDropdownID('');
       Alert.alert('Success', 'User role updated.');
     } catch (error) {
       Alert.alert('Error', error.message || 'Unable to update role.');
     }
   };
+
+  const filteredAccounts = useMemo(() => {
+    const query = accountSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return allAccounts;
+    }
+
+    return allAccounts.filter((account) => {
+      const displayName = getAccountDisplayName(account).toLowerCase();
+      const email = String(account.email || '').toLowerCase();
+      return displayName.includes(query) || email.includes(query);
+    });
+  }, [accountSearchQuery, allAccounts]);
+
+  const groupedAccounts = useMemo(() => (
+    accountRoleSections.map((section) => ({
+      ...section,
+      accounts: filteredAccounts.filter((account) => (account.role || USER_ROLES.VIEWER) === section.key),
+    }))
+  ), [filteredAccounts]);
 
   const handleSaveTwitchURL = async () => {
     if (savingTwitchUrl) {
@@ -586,44 +622,141 @@ export default function ControlDashboardScreen() {
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Account Management</Text>
           <Text style={[styles.sectionNote, { color: theme.colors.textSecondary }]}>
-            Upgrade users from Viewer to Scouter, Drive Team, or Scouting Lead.
+            Search accounts and manage roles by account type.
           </Text>
+          <View style={[styles.accountSearchRow, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
+            <Ionicons name="search" size={18} color={theme.colors.textSecondary} />
+            <TextInput
+              style={[styles.accountSearchInput, { color: theme.colors.text }]}
+              value={accountSearchQuery}
+              onChangeText={setAccountSearchQuery}
+              placeholder="Search accounts by name or email"
+              placeholderTextColor={theme.colors.textSecondary}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
           {accountsLoading ? (
             <Text style={[styles.sectionNote, { color: theme.colors.textSecondary }]}>Loading accounts...</Text>
+          ) : filteredAccounts.length === 0 ? (
+            <Text style={[styles.accountEmptyText, { color: theme.colors.textSecondary }]}>
+              No matching accounts found.
+            </Text>
           ) : (
-            allAccounts.map((account) => (
-              <View key={account.id} style={[styles.accountRow, { borderColor: theme.colors.border }]}>
-                <View style={styles.accountInfo}>
-                  <Text style={[styles.accountName, { color: theme.colors.text }]}>
-                    {[account.first_name, account.last_name].filter(Boolean).join(' ') || account.name || account.email || account.id}
-                  </Text>
-                  <Text style={[styles.accountMeta, { color: theme.colors.textSecondary }]}>
-                    Current role: {(account.role || USER_ROLES.VIEWER).replace('_', ' ')}
+            groupedAccounts.map((section) => (
+              <View key={section.key} style={styles.accountRoleSection}>
+                <View style={styles.accountRoleSectionHeader}>
+                  <Text style={[styles.accountRoleSectionTitle, { color: theme.colors.text }]}>{section.label}</Text>
+                  <Text style={[styles.accountRoleSectionCount, { color: theme.colors.textSecondary }]}>
+                    {section.accounts.length}
                   </Text>
                 </View>
-                <View style={styles.accountRoleButtons}>
-                  {upgradableRoleOptions.map((option) => (
-                    <TouchableOpacity
-                      key={`${account.id}-${option.key}`}
-                      style={[
-                        styles.accountRoleButton,
-                        { borderColor: theme.colors.border },
-                        account.role === option.key && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-                      ]}
-                      onPress={() => handleRoleUpgrade(account.id, option.key)}
-                    >
-                      <Text
-                        style={[
-                          styles.accountRoleButtonText,
-                          { color: theme.colors.text },
-                          account.role === option.key && { color: 'white' },
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {section.accounts.length === 0 ? null : (
+                  <View style={styles.accountGrid}>
+                    {section.accounts.map((account) => {
+                      const isDropdownOpen = openAccountDropdownID === account.id;
+                      return (
+                        <View
+                          key={account.id}
+                          style={[
+                            styles.accountCard,
+                            Platform.OS === 'web' && styles.accountCardWeb,
+                            { backgroundColor: theme.colors.background, borderColor: theme.colors.border },
+                          ]}
+                        >
+                          <View style={styles.accountCardTopRow}>
+                            <View style={styles.accountIdentity}>
+                              <View
+                                style={[
+                                  styles.accountIconBadge,
+                                  Platform.OS === 'web' && styles.accountIconBadgeWeb,
+                                  { backgroundColor: `${theme.colors.primary}18` },
+                                ]}
+                              >
+                                <Ionicons
+                                  name="person"
+                                  size={Platform.OS === 'web' ? 12 : 14}
+                                  color={theme.colors.primary}
+                                />
+                              </View>
+                              <View style={styles.accountInfo}>
+                                <Text
+                                  style={[
+                                    styles.accountName,
+                                    Platform.OS === 'web' && styles.accountNameWeb,
+                                    { color: theme.colors.text },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {getAccountDisplayName(account)}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.accountMeta,
+                                    Platform.OS === 'web' && styles.accountMetaWeb,
+                                    { color: theme.colors.textSecondary },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {account.email || account.id}
+                                </Text>
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              style={[
+                                styles.accountDropdownButton,
+                                Platform.OS === 'web' && styles.accountDropdownButtonWeb,
+                                { borderColor: theme.colors.border },
+                              ]}
+                              onPress={() => setOpenAccountDropdownID(isDropdownOpen ? '' : account.id)}
+                            >
+                              <Text
+                                style={[
+                                  styles.accountDropdownText,
+                                  Platform.OS === 'web' && styles.accountDropdownTextWeb,
+                                  { color: theme.colors.text },
+                                ]}
+                              >
+                                {getRoleLabel(account.role || USER_ROLES.VIEWER)}
+                              </Text>
+                              <Ionicons
+                                name={isDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                                size={13}
+                                color={theme.colors.textSecondary}
+                              />
+                            </TouchableOpacity>
+                          </View>
+                          {isDropdownOpen ? (
+                            <View style={[styles.accountDropdownMenu, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+                              {upgradableRoleOptions.map((option) => (
+                                <TouchableOpacity
+                                  key={`${account.id}-${option.key}`}
+                                  style={[
+                                    styles.accountDropdownOption,
+                                    option.key === (account.role || USER_ROLES.VIEWER) && {
+                                      backgroundColor: `${theme.colors.primary}22`,
+                                    },
+                                  ]}
+                                  onPress={() => handleRoleUpgrade(account.id, option.key)}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.accountDropdownOptionText,
+                                      { color: theme.colors.text },
+                                      option.key === (account.role || USER_ROLES.VIEWER) && { color: theme.colors.primary },
+                                    ]}
+                                  >
+                                    {option.label}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
             ))
           )}
@@ -1288,15 +1421,138 @@ const styles = StyleSheet.create({
     padding: 10,
     marginTop: 10,
   },
+  accountSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  accountSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 10,
+    marginLeft: 8,
+    outlineWidth: 0,
+  },
+  accountRoleSection: {
+    marginTop: 14,
+  },
+  accountRoleSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  accountRoleSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  accountRoleSectionCount: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  accountGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  accountCard: {
+    width: '48%',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  accountCardWeb: {
+    width: '24%',
+    padding: 8,
+  },
+  accountCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  accountIdentity: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  accountIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  accountIconBadgeWeb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 5,
+  },
   accountInfo: {
-    marginBottom: 8,
+    flex: 1,
+    minWidth: 0,
   },
   accountName: {
     fontSize: 14,
     fontWeight: '700',
   },
+  accountNameWeb: {
+    fontSize: 12,
+  },
   accountMeta: {
     fontSize: 12,
+    marginTop: 2,
+  },
+  accountMetaWeb: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  accountDropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 118,
+    marginLeft: 8,
+  },
+  accountDropdownText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  accountDropdownButtonWeb: {
+    minWidth: 100,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+  },
+  accountDropdownTextWeb: {
+    fontSize: 11,
+  },
+  accountDropdownMenu: {
+    borderWidth: 1,
+    borderRadius: 10,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  accountDropdownOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  accountDropdownOptionText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  accountEmptyText: {
+    fontSize: 13,
     marginTop: 2,
   },
   accountRoleButtons: {
