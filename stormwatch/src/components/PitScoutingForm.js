@@ -100,11 +100,7 @@ export default function PitScoutingForm({ route, navigation }) {
         motors_besides_drivetrain: Number(pitData.motorsBesidesDrivetrain || 0),
         drivetrain_motors: Number(pitData.drivetrainMotors || 0),
       });
-
-      Alert.alert('Saved', `Pit scouting for Team ${teamNumber} was saved.`, [
-        { text: 'Keep Editing', style: 'cancel' },
-        { text: 'Back', onPress: () => navigation.goBack() },
-      ]);
+      navigation.goBack();
     } catch (error) {
       Alert.alert('Error', error.message || 'Unable to save pit scouting data.');
     } finally {

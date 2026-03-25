@@ -124,7 +124,10 @@ func TeamGet(db *sql.DB) http.HandlerFunc {
 				COALESCE(rookie_year, 0),
 				COALESCE(pit_notes, ''),
 				COALESCE(scouting_notes, ''),
-				COALESCE(robot_photo, '')
+				COALESCE(robot_photo, ''),
+				COALESCE(robot_weight, ''),
+				COALESCE(robot_dimensions, ''),
+				COALESCE(drivebase_type, '')
 			FROM teams
 			WHERE team_key=?
 		`, key)
@@ -136,12 +139,15 @@ func TeamGet(db *sql.DB) http.HandlerFunc {
 			State         string                 `json:"state"`
 			Country       string                 `json:"country"`
 			Rookie        int                    `json:"rookie_year"`
-			PitNotes      string                 `json:"pit_notes"`
-			ScoutingNotes string                 `json:"scouting_notes"`
-			RobotPhoto    string                 `json:"robot_photo"`
-			EPA           map[string]interface{} `json:"epa,omitempty"`
+			PitNotes        string                 `json:"pit_notes"`
+			ScoutingNotes   string                 `json:"scouting_notes"`
+			RobotPhoto      string                 `json:"robot_photo"`
+			RobotWeight     string                 `json:"robot_weight"`
+			RobotDimensions string                 `json:"robot_dimensions"`
+			DrivebaseType   string                 `json:"drivebase_type"`
+			EPA             map[string]interface{} `json:"epa,omitempty"`
 		}
-		if err := row.Scan(&t.TeamKey, &t.TeamNum, &t.Name, &t.City, &t.State, &t.Country, &t.Rookie, &t.PitNotes, &t.ScoutingNotes, &t.RobotPhoto); err != nil {
+		if err := row.Scan(&t.TeamKey, &t.TeamNum, &t.Name, &t.City, &t.State, &t.Country, &t.Rookie, &t.PitNotes, &t.ScoutingNotes, &t.RobotPhoto, &t.RobotWeight, &t.RobotDimensions, &t.DrivebaseType); err != nil {
 			writeJSON(w, 404, map[string]string{"error": "not found"})
 			return
 		}
@@ -1625,6 +1631,14 @@ func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		normalizedEventKey := strings.TrimSpace(data.EventKey)
+		var eventKeyValue interface{}
+		if normalizedEventKey == "" {
+			eventKeyValue = nil
+		} else {
+			eventKeyValue = normalizedEventKey
+		}
+
 		teamNumStr := strings.TrimPrefix(data.TeamKey, "frc")
 		teamNum, err := strconv.Atoi(teamNumStr)
 		if err != nil {
@@ -1641,7 +1655,15 @@ func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		_, err = db.Exec(`DELETE FROM pit_scouting_data WHERE team_key=? AND event_key=? AND scout_user_id=?`, data.TeamKey, data.EventKey, user.ID)
+		deleteQuery := `DELETE FROM pit_scouting_data WHERE team_key=? AND scout_user_id=?`
+		deleteArgs := []interface{}{data.TeamKey, user.ID}
+		if normalizedEventKey == "" {
+			deleteQuery += ` AND event_key IS NULL`
+		} else {
+			deleteQuery += ` AND event_key=?`
+			deleteArgs = append(deleteArgs, normalizedEventKey)
+		}
+		_, err = db.Exec(deleteQuery, deleteArgs...)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
@@ -1658,7 +1680,7 @@ func PitScoutingSubmit(db *sql.DB) http.HandlerFunc {
 				has_belts, indexer_other, notes, must_point_at_hub, motors_besides_drivetrain,
 				drivetrain_motors
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, data.TeamKey, data.EventKey, scoutingReportName(user), user.ID,
+		`, data.TeamKey, eventKeyValue, scoutingReportName(user), user.ID,
 			data.EstimatedBPS, data.ShooterArchetype, data.CanTrench, data.CanBump, data.ClimbLevel, data.AutoClimb,
 			data.ClimbLocation, data.Weight, data.Height, data.VisionCapabilities, data.Dimensions, data.AutoPicture,
 			data.BatteryCount, data.AutoCount, data.IndexViaIntake, data.IntakeAlwaysOut, data.Feeding, data.FullField,
@@ -1690,10 +1712,10 @@ func PitScoutingGet(db *sql.DB) http.HandlerFunc {
 		var args []interface{}
 
 		if eventKey != "" {
-			query = `SELECT id, team_key, event_key, scout_name, scout_user_id, estimated_bps, shooter_archetype, can_trench, can_bump, climb_level, auto_climb, climb_location, weight, height, vision_capabilities, dimensions, auto_picture, battery_count, auto_count, index_via_intake, intake_always_out, feeding, full_field, half_field, push_fuel, drivetrain, swerve_level, programming_language, years_used_programming_language, indexer_type, has_spindexer, has_rollers, has_belts, indexer_other, notes, must_point_at_hub, motors_besides_drivetrain, drivetrain_motors, created_at, updated_at FROM pit_scouting_data WHERE team_key=? AND event_key=? ORDER BY created_at DESC LIMIT 1`
+			query = `SELECT id, team_key, COALESCE(event_key, ''), COALESCE(scout_name, ''), scout_user_id, COALESCE(estimated_bps, ''), COALESCE(shooter_archetype, ''), can_trench, can_bump, COALESCE(climb_level, ''), auto_climb, COALESCE(climb_location, ''), COALESCE(weight, ''), COALESCE(height, ''), COALESCE(vision_capabilities, ''), COALESCE(dimensions, ''), COALESCE(auto_picture, ''), battery_count, auto_count, index_via_intake, intake_always_out, COALESCE(feeding, ''), full_field, half_field, push_fuel, COALESCE(drivetrain, ''), COALESCE(swerve_level, ''), COALESCE(programming_language, ''), COALESCE(years_used_programming_language, ''), COALESCE(indexer_type, ''), has_spindexer, has_rollers, has_belts, COALESCE(indexer_other, ''), COALESCE(notes, ''), must_point_at_hub, motors_besides_drivetrain, drivetrain_motors, created_at, updated_at FROM pit_scouting_data WHERE team_key=? AND event_key=? ORDER BY created_at DESC LIMIT 1`
 			args = []interface{}{teamKey, eventKey}
 		} else {
-			query = `SELECT id, team_key, event_key, scout_name, scout_user_id, estimated_bps, shooter_archetype, can_trench, can_bump, climb_level, auto_climb, climb_location, weight, height, vision_capabilities, dimensions, auto_picture, battery_count, auto_count, index_via_intake, intake_always_out, feeding, full_field, half_field, push_fuel, drivetrain, swerve_level, programming_language, years_used_programming_language, indexer_type, has_spindexer, has_rollers, has_belts, indexer_other, notes, must_point_at_hub, motors_besides_drivetrain, drivetrain_motors, created_at, updated_at FROM pit_scouting_data WHERE team_key=? ORDER BY created_at DESC LIMIT 1`
+			query = `SELECT id, team_key, COALESCE(event_key, ''), COALESCE(scout_name, ''), scout_user_id, COALESCE(estimated_bps, ''), COALESCE(shooter_archetype, ''), can_trench, can_bump, COALESCE(climb_level, ''), auto_climb, COALESCE(climb_location, ''), COALESCE(weight, ''), COALESCE(height, ''), COALESCE(vision_capabilities, ''), COALESCE(dimensions, ''), COALESCE(auto_picture, ''), battery_count, auto_count, index_via_intake, intake_always_out, COALESCE(feeding, ''), full_field, half_field, push_fuel, COALESCE(drivetrain, ''), COALESCE(swerve_level, ''), COALESCE(programming_language, ''), COALESCE(years_used_programming_language, ''), COALESCE(indexer_type, ''), has_spindexer, has_rollers, has_belts, COALESCE(indexer_other, ''), COALESCE(notes, ''), must_point_at_hub, motors_besides_drivetrain, drivetrain_motors, created_at, updated_at FROM pit_scouting_data WHERE team_key=? ORDER BY created_at DESC LIMIT 1`
 			args = []interface{}{teamKey}
 		}
 

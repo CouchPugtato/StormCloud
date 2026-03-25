@@ -178,7 +178,10 @@ class ApiService {
 
   async getPitScoutingData(teamKey, eventKey) {
     try {
-      return await this.request(`/pit-scouting/${teamKey}/${eventKey}`);
+      const path = eventKey && String(eventKey).trim() !== ''
+        ? `/pit-scouting/${teamKey}/${eventKey}`
+        : `/pit-scouting/${teamKey}`;
+      return await this.request(path);
     } catch (error) {
       if (
         error.message.includes('404') ||

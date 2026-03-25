@@ -18,8 +18,10 @@ func Open(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// Allow concurrent read connections so API requests do not queue behind
+	// long-running sync jobs. WAL mode + busy_timeout still serializes writes.
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(4)
 	if _, err := db.Exec(`PRAGMA busy_timeout=15000;`); err != nil {
 		return nil, err
 	}

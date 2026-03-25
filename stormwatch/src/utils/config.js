@@ -5,9 +5,24 @@ const normalizeEnv = (value) => {
   return normalized === 'production' ? 'production' : 'development';
 };
 
+const isLocalWebHost = () => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined' || !window.location) {
+    return false;
+  }
+
+  const hostname = (window.location.hostname || '').trim().toLowerCase();
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+};
+
 export const getAppEnv = () => {
   const envValue = typeof process !== 'undefined' && process.env && process.env.EXPO_PUBLIC_APP_ENV;
-  return normalizeEnv(envValue);
+  const normalizedEnv = normalizeEnv(envValue);
+
+  if (Platform.OS === 'web' && !isLocalWebHost()) {
+    return 'production';
+  }
+
+  return normalizedEnv;
 };
 
 export const getApiBaseURL = () => {

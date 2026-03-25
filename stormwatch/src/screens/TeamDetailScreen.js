@@ -16,6 +16,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth, USER_ROLES } from '../contexts/AuthContext';
 import apiService from '../utils/apiService';
@@ -71,75 +72,88 @@ export default function TeamDetailScreen({ navigation, route }) {
   const canvasRef = useRef(null);
   const webStreamRef = useRef(null);
 
-  useEffect(() => {
-    const fetchTeamDetails = async () => {
-      if (team && team.team_key) {
-        try {
-          setLoading(true);
-          setError(null);
-          const detailedTeam = await apiService.getTeam(team.team_key);
-          setTeamData(detailedTeam);
-          
-          setPitData({
-            weight: detailedTeam.robot_weight || '',
-            dimensions: detailedTeam.robot_dimensions || '',
-            drivebase: detailedTeam.drivebase_type || '',
-            notes: detailedTeam.pit_notes || '',
-            robot_weight: detailedTeam.robot_weight || '',
-            robot_dimensions: detailedTeam.robot_dimensions || '',
-            drivebase_type: detailedTeam.drivebase_type || '',
-            has_vision: detailedTeam.has_vision || false,
-            max_coral_level: detailedTeam.max_coral_level || '',
-            can_climb: detailedTeam.can_climb || false,
-            autonomous_capabilities: detailedTeam.autonomous_capabilities || '',
-            programming_language: detailedTeam.programming_language || '',
-            strengths: detailedTeam.strengths || '',
-            weaknesses: detailedTeam.weaknesses || '',
-            comments: detailedTeam.comments || ''
-          });
-          
-          const eventKey = '';
-          const pitScoutingData = await apiService.getPitScoutingData(detailedTeam.team_key, eventKey);
-          if (pitScoutingData) {
-            setPitData(prev => ({
-              ...prev,
-              robot_weight: pitScoutingData.robot_weight || prev.robot_weight,
-              robot_dimensions: pitScoutingData.robot_dimensions || prev.robot_dimensions,
-              drivebase_type: pitScoutingData.drivebase_type || prev.drivebase_type,
-              has_vision: pitScoutingData.has_vision || prev.has_vision,
-              max_coral_level: pitScoutingData.max_coral_level || prev.max_coral_level,
-              can_climb: pitScoutingData.can_climb || prev.can_climb,
-              autonomous_capabilities: pitScoutingData.autonomous_capabilities || prev.autonomous_capabilities,
-              programming_language: pitScoutingData.programming_language || prev.programming_language,
-              strengths: pitScoutingData.strengths || prev.strengths,
-              weaknesses: pitScoutingData.weaknesses || prev.weaknesses,
-              comments: pitScoutingData.comments || prev.comments
-            }));
-          }
-          
-          const matchScoutingData = await apiService.getTeamMatchScoutingData(detailedTeam.team_key);
-          if (matchScoutingData) {
-            setMatchScoutingData(matchScoutingData);
-          }
-          
-          if (detailedTeam.scouting_notes) {
-            setNotes(detailedTeam.scouting_notes);
-          }
-        } catch (err) {
-          console.error('Failed to fetch team details:', err);
-          setError('Failed to load team details');
-          setTeamData(team);
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        setError('No team data available');
-        setLoading(false);
-      }
-    };
+  const fetchTeamDetails = async () => {
+    if (!team || !team.team_key) {
+      setError('No team data available');
+      setLoading(false);
+      return;
+    }
 
-    fetchTeamDetails();
-  }, [team]);
+    try {
+      setLoading(true);
+      setError(null);
+      const detailedTeam = await apiService.getTeam(team.team_key);
+      setTeamData(detailedTeam);
+
+      setPitData({
+        weight: detailedTeam.robot_weight || '',
+        dimensions: detailedTeam.robot_dimensions || '',
+        drivebase: detailedTeam.drivebase_type || '',
+        notes: detailedTeam.pit_notes || '',
+        robot_weight: detailedTeam.robot_weight || '',
+        robot_dimensions: detailedTeam.robot_dimensions || '',
+        drivebase_type: detailedTeam.drivebase_type || '',
+        has_vision: detailedTeam.has_vision || false,
+        vision_system: detailedTeam.vision_system || false,
+        max_coral_level: detailedTeam.max_coral_level || '',
+        can_climb: detailedTeam.can_climb || false,
+        max_climb_level: detailedTeam.max_climb_level || '',
+        climb_time_estimate: detailedTeam.climb_time_estimate || '',
+        auto_mobility: detailedTeam.auto_mobility || false,
+        auto_scoring_capability: detailedTeam.auto_scoring_capability || '',
+        preferred_starting_position: detailedTeam.preferred_starting_position || '',
+        autonomous_capabilities: detailedTeam.autonomous_capabilities || '',
+        autonomous_reliability: detailedTeam.autonomous_reliability || '',
+        programming_language: detailedTeam.programming_language || '',
+        strategy_notes: detailedTeam.strategy_notes || '',
+        strengths: detailedTeam.strengths || '',
+        weaknesses: detailedTeam.weaknesses || '',
+        general_notes: detailedTeam.general_notes || '',
+        comments: detailedTeam.comments || ''
+      });
+
+      const pitScoutingData = await apiService.getPitScoutingData(detailedTeam.team_key, '');
+      if (pitScoutingData) {
+        setPitData(prev => ({
+          ...prev,
+          weight: pitScoutingData.weight || prev.weight,
+          dimensions: pitScoutingData.dimensions || prev.dimensions,
+          drivebase: pitScoutingData.drivetrain || prev.drivebase,
+          notes: pitScoutingData.notes || prev.notes,
+          robot_weight: pitScoutingData.weight || prev.robot_weight,
+          robot_dimensions: pitScoutingData.dimensions || prev.robot_dimensions,
+          drivebase_type: pitScoutingData.drivetrain || prev.drivebase_type,
+          has_vision: !!(pitScoutingData.vision_capabilities || prev.has_vision),
+          vision_system: !!(pitScoutingData.vision_capabilities || prev.vision_system),
+          max_coral_level: pitScoutingData.estimated_bps || prev.max_coral_level,
+          can_climb: Boolean(pitScoutingData.climb_level && pitScoutingData.climb_level !== 'None'),
+          max_climb_level: pitScoutingData.climb_level || prev.max_climb_level,
+          auto_scoring_capability: pitScoutingData.auto_picture || prev.auto_scoring_capability,
+          autonomous_capabilities: pitScoutingData.vision_capabilities || prev.autonomous_capabilities,
+          programming_language: pitScoutingData.programming_language || prev.programming_language,
+          strategy_notes: pitScoutingData.feeding || prev.strategy_notes,
+          comments: pitScoutingData.notes || prev.comments
+        }));
+      }
+
+      const matchScoutingData = await apiService.getTeamMatchScoutingData(detailedTeam.team_key);
+      setMatchScoutingData(matchScoutingData || []);
+
+      setNotes(detailedTeam.scouting_notes || '');
+    } catch (err) {
+      console.error('Failed to fetch team details:', err);
+      setError('Failed to load team details');
+      setTeamData(team);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchTeamDetails();
+    }, [team])
+  );
 
   useEffect(() => {
     if (!teamData?.robot_photo) {
@@ -387,6 +401,31 @@ export default function TeamDetailScreen({ navigation, route }) {
   
   const epaData = teamData.EPA || teamData.epa || {};
   const hasEpaData = Object.keys(epaData).length > 0;
+  const hasPitScoutingData = Boolean(
+    pitData.weight ||
+    pitData.dimensions ||
+    pitData.drivebase ||
+    pitData.notes ||
+    pitData.robot_weight ||
+    pitData.robot_dimensions ||
+    pitData.drivebase_type ||
+    pitData.has_vision ||
+    pitData.vision_system ||
+    pitData.max_coral_level ||
+    pitData.can_climb ||
+    pitData.max_climb_level ||
+    pitData.climb_time_estimate ||
+    pitData.autonomous_capabilities ||
+    pitData.auto_scoring_capability ||
+    pitData.preferred_starting_position ||
+    pitData.programming_language ||
+    pitData.strategy_notes ||
+    pitData.strengths ||
+    pitData.weaknesses ||
+    pitData.comments ||
+    pitData.general_notes ||
+    pitData.autonomous_reliability
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -556,34 +595,29 @@ export default function TeamDetailScreen({ navigation, route }) {
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Pit Scouting</Text>
           
-          {(pitData.robot_weight || pitData.robot_dimensions || pitData.drivebase_type || 
-            pitData.has_vision || pitData.vision_system || pitData.max_coral_level || pitData.can_climb || 
-            pitData.max_climb_level || pitData.climb_time_estimate || pitData.autonomous_capabilities || 
-            pitData.auto_mobility || pitData.auto_scoring_capability || pitData.preferred_starting_position ||
-            pitData.programming_language || pitData.strengths || pitData.weaknesses || pitData.comments ||
-            pitData.strategy_notes || pitData.general_notes || pitData.autonomous_reliability) ? (
+          {hasPitScoutingData ? (
             <View style={styles.pitDataContainer}>
               <View style={[styles.pitDataSection, { backgroundColor: theme.colors.background }]}>
                 <Text style={[styles.pitDataSectionTitle, { color: theme.colors.primary }]}>Robot Specifications</Text>
-                {pitData.robot_weight && (
+                {(pitData.robot_weight || pitData.weight) && (
                   <View style={styles.pitDataRow}>
                     <Ionicons name="barbell-outline" size={16} color={theme.colors.textSecondary} />
                     <Text style={[styles.pitDataLabel, { color: theme.colors.textSecondary }]}>Weight:</Text>
-                    <Text style={[styles.pitDataValue, { color: theme.colors.text }]}>{pitData.robot_weight}</Text>
+                    <Text style={[styles.pitDataValue, { color: theme.colors.text }]}>{pitData.robot_weight || pitData.weight}</Text>
                   </View>
                 )}
-                {pitData.robot_dimensions && (
+                {(pitData.robot_dimensions || pitData.dimensions) && (
                   <View style={styles.pitDataRow}>
                     <Ionicons name="resize-outline" size={16} color={theme.colors.textSecondary} />
                     <Text style={[styles.pitDataLabel, { color: theme.colors.textSecondary }]}>Dimensions:</Text>
-                    <Text style={[styles.pitDataValue, { color: theme.colors.text }]}>{pitData.robot_dimensions}</Text>
+                    <Text style={[styles.pitDataValue, { color: theme.colors.text }]}>{pitData.robot_dimensions || pitData.dimensions}</Text>
                   </View>
                 )}
-                {pitData.drivebase_type && (
+                {(pitData.drivebase_type || pitData.drivebase) && (
                   <View style={styles.pitDataRow}>
                     <Ionicons name="car-outline" size={16} color={theme.colors.textSecondary} />
                     <Text style={[styles.pitDataLabel, { color: theme.colors.textSecondary }]}>Drivetrain:</Text>
-                    <Text style={[styles.pitDataValue, { color: theme.colors.text }]}>{pitData.drivebase_type}</Text>
+                    <Text style={[styles.pitDataValue, { color: theme.colors.text }]}>{pitData.drivebase_type || pitData.drivebase}</Text>
                   </View>
                 )}
                 {pitData.programming_language && (
@@ -741,6 +775,12 @@ export default function TeamDetailScreen({ navigation, route }) {
                 <View style={[styles.pitDataSection, { backgroundColor: theme.colors.background }]}>
                   <Text style={[styles.pitDataSectionTitle, { color: theme.colors.primary }]}>Additional Comments</Text>
                   <Text style={[styles.pitDataText, { color: theme.colors.text }]}>{pitData.comments}</Text>
+                </View>
+              )}
+              {pitData.notes && pitData.notes !== pitData.comments && (
+                <View style={[styles.pitDataSection, { backgroundColor: theme.colors.background }]}>
+                  <Text style={[styles.pitDataSectionTitle, { color: theme.colors.primary }]}>Scout Notes</Text>
+                  <Text style={[styles.pitDataText, { color: theme.colors.text }]}>{pitData.notes}</Text>
                 </View>
               )}
             </View>
