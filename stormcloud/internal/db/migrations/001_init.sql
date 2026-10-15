@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS teams(
   team_num INTEGER NOT NULL,
   name TEXT, city TEXT, state TEXT, country TEXT,
   rookie_year INTEGER,
+  robot_weight TEXT DEFAULT '',
+  robot_dimensions TEXT DEFAULT '',
+  drivebase_type TEXT DEFAULT '',
   last_synced INTEGER
 );
 

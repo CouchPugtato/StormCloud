@@ -23,35 +23,35 @@ export default function PitScoutingForm({ route, navigation }) {
   const { teamNumber, eventKey = '' } = route.params || {};
   const [saving, setSaving] = useState(false);
   const [pitData, setPitData] = useState({
+    weight: '',
+    height: '',
+    dimensions: '',
+    batteryCount: '0',
+    motorsBesidesDrivetrain: '0',
+    drivetrainMotors: '0',
     estimatedBps: '',
     shooterArchetype: '',
+    indexerType: '',
+    indexViaIntake: false,
+    intakeAlwaysOut: false,
     canTrench: false,
     canBump: false,
+    pushFuel: false,
+    canFeed: false,
+    driverExperience: '',
+    canClimb: false,
     climbLevel: '',
     autoClimb: false,
     climbLocation: '',
-    weight: '',
-    height: '',
-    visionCapabilities: '',
-    dimensions: '',
-    autoPicture: '',
-    batteryCount: '0',
     autoCount: '0',
-    indexViaIntake: false,
-    intakeAlwaysOut: false,
-    feeding: '',
-    fullField: false,
-    halfField: false,
-    pushFuel: false,
+    autoPicture: '',
+    visionCapabilities: '',
     drivetrain: '',
     swerveLevel: '',
     programmingLanguage: '',
     yearsUsedProgrammingLanguage: '',
-    indexerType: '',
     notes: '',
     mustPointAtHub: false,
-    motorsBesidesDrivetrain: '0',
-    drivetrainMotors: '0',
   });
 
   const updateField = (field, value) => setPitData((prev) => ({ ...prev, [field]: value }));
@@ -70,7 +70,7 @@ export default function PitScoutingForm({ route, navigation }) {
         shooter_archetype: pitData.shooterArchetype,
         can_trench: pitData.canTrench,
         can_bump: pitData.canBump,
-        climb_level: pitData.climbLevel,
+        climb_level: pitData.canClimb ? pitData.climbLevel : 'None',
         auto_climb: pitData.autoClimb,
         climb_location: pitData.climbLocation.trim(),
         weight: pitData.weight.trim(),
@@ -82,9 +82,9 @@ export default function PitScoutingForm({ route, navigation }) {
         auto_count: Number(pitData.autoCount || 0),
         index_via_intake: pitData.indexViaIntake,
         intake_always_out: pitData.intakeAlwaysOut,
-        feeding: pitData.feeding.trim(),
-        full_field: pitData.fullField,
-        half_field: pitData.halfField,
+        feeding: pitData.canFeed ? 'Yes' : '',
+        full_field: false,
+        half_field: false,
         push_fuel: pitData.pushFuel,
         drivetrain: pitData.drivetrain.trim(),
         swerve_level: pitData.swerveLevel.trim(),
@@ -175,51 +175,55 @@ export default function PitScoutingForm({ route, navigation }) {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Scout Information</Text>
-          {renderTextInput('Estimated BPS', 'estimatedBps', { keyboardType: 'numeric', numeric: true, placeholder: '0.0' })}
-          {renderChoiceRow('Shooter Archetype', 'shooterArchetype', SHOOTER_ARCHETYPES)}
-        </View>
-
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Drive & Field Access</Text>
-          {renderToggle('Yes or no trench', 'canTrench')}
-          {renderToggle('Yes or no bump', 'canBump')}
-          {renderToggle('Index via intake', 'indexViaIntake')}
-          {renderToggle('Intake always out', 'intakeAlwaysOut')}
-          {renderToggle('Full field', 'fullField')}
-          {renderToggle('Half field', 'halfField')}
-          {renderToggle('Push fuel', 'pushFuel')}
-          {renderTextInput('Feeding', 'feeding', { placeholder: 'Feeder station, lane notes, etc.' })}
-          {renderTextInput('Drivetrain', 'drivetrain', { placeholder: 'Tank, swerve, west coast...' })}
-          {renderTextInput('Swerve level', 'swerveLevel', { placeholder: 'Practice, elite, average...' })}
-        </View>
-
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Climb & Auto</Text>
-          {renderChoiceRow('Climb level', 'climbLevel', CLIMB_LEVELS)}
-          {renderToggle('Yes or No auto climb', 'autoClimb')}
-          {renderTextInput('Climb location', 'climbLocation', { placeholder: 'Side, center, bar, etc.' })}
-          {renderTextInput('Describe autospicture', 'autoPicture', { multiline: true, placeholder: 'Describe their auto path and shot picture...' })}
-          {renderTextInput('Auto count', 'autoCount', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
-        </View>
-
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Robot Specs</Text>
           {renderTextInput('Weight', 'weight', { placeholder: 'lbs' })}
           {renderTextInput('Height', 'height', { placeholder: 'inches' })}
           {renderTextInput('Dimensions', 'dimensions', { placeholder: 'L x W x H' })}
-          {renderTextInput('Describe vision capabilities', 'visionCapabilities', { multiline: true, placeholder: 'Tracking, target lock, cameras, etc.' })}
-          {renderToggle('Do you/your vision have to be pointed at the hub to score', 'mustPointAtHub')}
+          {renderTextInput('Drivetrain', 'drivetrain', { placeholder: 'Tank, swerve, west coast...' })}
+          {renderTextInput('Swerve level', 'swerveLevel', { placeholder: 'L1,L2,L3...' })}
+          {renderToggle('Must point at hub to score', 'mustPointAtHub')}
           {renderTextInput('# of batteries', 'batteryCount', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
           {renderTextInput('# of motors besides drivetrain', 'motorsBesidesDrivetrain', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
           {renderTextInput('Motors in the drivetrain', 'drivetrainMotors', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Programming & Indexer</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Shooter and Indexer</Text>
+          {renderTextInput('Estimated BPS', 'estimatedBps', { keyboardType: 'numeric', numeric: true, placeholder: '0.0' })}
+          {renderChoiceRow('Shooter Archetype', 'shooterArchetype', SHOOTER_ARCHETYPES)}
+          {renderChoiceRow('Type of indexer', 'indexerType', INDEXER_TYPES)}
+          {renderToggle('Index via intake', 'indexViaIntake')}
+          {renderToggle('Intake always out', 'intakeAlwaysOut')}
+        </View>
+
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driving</Text>
+          {renderToggle('Trench', 'canTrench')}
+          {renderToggle('Bump', 'canBump')}
+          {renderToggle('Can Push Fuel', 'pushFuel')}
+          {renderToggle('Can Feed', 'canFeed')}
+          {renderTextInput('Driver Experience', 'driverExperience', { placeholder: 'years' })}
+        </View>
+
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Climb</Text>
+          {renderToggle('Can Climb', 'canClimb')}
+          {renderChoiceRow('Climb level', 'climbLevel', CLIMB_LEVELS)}
+          {renderTextInput('Climb location', 'climbLocation', { placeholder: 'Side, center, bar, etc.' })}
+        </View>
+
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Auto</Text>
+          {renderToggle('Can Climb in Auto', 'autoClimb')}
+          {renderTextInput('Number of Autos', 'autoCount', { keyboardType: 'numeric', numeric: true, placeholder: '0' })}
+          {renderTextInput('Describe Autos', 'autoPicture', { multiline: true, placeholder: 'Describe auto routines and paths...' })}
+          {renderTextInput('Describe Autonomous Features', 'visionCapabilities', { multiline: true, placeholder: 'Sensors, vision, targeting, automation, etc.' })}
+        </View>
+
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Programming</Text>
           {renderTextInput('Programming language', 'programmingLanguage', { placeholder: 'Java, C++, Kotlin...' })}
           {renderTextInput('Years used programming language', 'yearsUsedProgrammingLanguage', { placeholder: 'How long?' })}
-          {renderChoiceRow('Type of indexer', 'indexerType', INDEXER_TYPES)}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>

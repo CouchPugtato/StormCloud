@@ -91,6 +91,7 @@ func Router(db *sql.DB, hub realtime.HubIface, syncService *ingest.SyncService, 
 
 		r.Get("/form/{year}", FormJSON(db))
 		r.Post("/scout/submit", ScoutSubmit(db))
+		registerFormRoutes(r, db)
 
 		r.Post("/match-scouting", MatchScoutingSubmit(db))
 		r.Post("/alliance-scouting", AllianceScoutingSubmit(db))

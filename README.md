@@ -158,6 +158,7 @@ Events & Matches
 
 Scouting Forms
 - `GET /api/form/{year}` — JSON-defined scouting form metadata.
+- Versioned form storage and APIs: see [Versioned forms API](docs/versioned-forms.md) for draft creation, publishing, validation, and submissions. The current scouting UI continues to use the legacy endpoints.
 
 Match Scouting
 - `POST /api/match-scouting` — submit match scouting data.
